@@ -1,0 +1,12 @@
+# Generated files
+*.sln
+*.ini
+*.log
+*.pdb
+
+# Visual Studio generated folders
+/.vs/
+/.vscode/
+
+# Ava generated folders
+/Projects/
