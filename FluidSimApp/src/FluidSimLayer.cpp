@@ -184,25 +184,23 @@ void FluidSimLayer::_DrawParticles() const
     for (int particleID = 0; particleID < m_solver->GetBoundaryCount(); particleID++)
     {
         const Vec2f position = m_solver->GetBoundaryPosition(particleID);
-
         const Vec3f boundPos = { position.x, position.y, 0.f };
-        const Color boundColor = kWallColor;
 
-        Im3d::AddRectFilled(boundPos, particleRadius, Math::Identity4, boundColor);
+        Im3d::AddRectFilled(boundPos, particleRadius, Math::Identity4, kBoundColor);
     }
 
     for (int particleID = 0; particleID < m_solver->GetFluidCount(); particleID++)
     {
         const Vec2f position = m_solver->GetFluidPosition(particleID);
-        const float density = m_solver->GetFluidDensity(particleID) / kRestDensity;
-
         const Vec3f fluidPos = { position.x, position.y, 0.f };
 
+        const float densityWeight = m_solver->GetFluidDensity(particleID) / kRestDensity;
+
         Color fluidColor;
-        fluidColor.r = kLightColor.r + (kDenseColor.r - kLightColor.r) * density;
-        fluidColor.g = kLightColor.g + (kDenseColor.g - kLightColor.g) * density;
-        fluidColor.b = kLightColor.b + (kDenseColor.b - kLightColor.b) * density;
-    
+        fluidColor.r = 1.f + (kFluidColor.r - 1.f) * densityWeight;
+        fluidColor.g = 1.f + (kFluidColor.g - 1.f) * densityWeight;
+        fluidColor.b = 1.f + (kFluidColor.b - 1.f) * densityWeight;
+
         Im3d::AddRectFilled(fluidPos, particleRadius, Math::Identity4, fluidColor);
     }
 }
@@ -249,8 +247,13 @@ void FluidSimLayer::_DisplayUI()
         if (ImGui::Button("Reset", buttonSize))
         {
             _ResetParticles();
-            m_simulationRunning = false;
         }
+
+        ImGui::Text("Fluid particles = %d", m_solver->GetFluidCount());
+        ImGui::Text("Boundary particles = %d", m_solver->GetBoundaryCount());
+
+        const float densityRatio = (m_solver->AverageFluidDensity() - kRestDensity) / kRestDensity;
+        ImGui::Text("Compressibility error : %.2f%%", densityRatio * 100.f);
 
         ImGui::End();
     }

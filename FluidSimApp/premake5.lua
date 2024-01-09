@@ -8,9 +8,17 @@ project "FluidSimApp"
     externalwarnings "Off"
     openmp "On"
 
-    location  (ProjectDir .. "%{prj.name}")
-    objdir    (ProjectDir .. "%{prj.name}" .. ObjRelativeDir)
-    targetdir (ProjectDir .. "%{prj.name}" .. BinRelativeDir)
+    cudaKeep "On"
+    cudaFastMath "On"
+    cudaRelocatableCode "On"
+    cudaVerbosePTXAS "On"
+    cudaMaxRegCount "32"
+    buildcustomizations "BuildCustomizations/CUDA 12.3"
+
+    location   (ProjectDir .. "FluidSimApp")
+    objdir     (ProjectDir .. "FluidSimApp" .. ObjRelativeDir)
+    targetdir  (ProjectDir .. "FluidSimApp" .. BinRelativeDir)
+    cudaIntDir (ProjectDir .. "FluidSimApp" .. CudaRelativeDir)
 
     files
     {
@@ -34,6 +42,7 @@ project "FluidSimApp"
 
     filter "system:windows"
         systemversion "latest"
+        cudaFiles { "src/**.cu" }
 
     filter "system:linux"
         systemversion "latest"

@@ -4,6 +4,7 @@
 // Ava
 #include <Core/EntryPoint.h>
 #include <Files/FileManager.h>
+#include <Files/FilePath.h>
 #include <Inputs/InputManager.h>
 #include <Graphics/GraphicsContext.h>
 #include <Time/Profiler.h>
@@ -51,6 +52,12 @@ Ava::Application* Ava::CreateApplication(const CmdLineParser& _args)
 
 FluidSimApp::FluidSimApp(const Ava::GUIAppSettings& _settings) : GUIApplication(_settings)
 {
+    // Save UI config next to executable
+    char exePath[MAX_PATH];
+    Ava::FileMgr::GetExecutablePath(exePath);
+    Ava::FilePath configUIPath(exePath);
+    configUIPath.SetFileName("imgui.ini");
+
     // Instantiates custom editor layer
     PushLayer<FluidSimLayer>();
 
@@ -61,6 +68,7 @@ FluidSimApp::FluidSimApp(const Ava::GUIAppSettings& _settings) : GUIApplication(
     Ava::ImGuiSettings UISettings{};
     UISettings.fontScale = 2.f;
     UISettings.theme = Ava::UI::ThemeDark;
+    UISettings.configFilePath = configUIPath.str();
     UISettings.configFlags = Ava::AVA_UI_DOCKING | Ava::AVA_UI_KEYBOARD_NAVIGATION;
     m_UILayer = PushOverlay<Ava::UILayer>(UISettings);
 }

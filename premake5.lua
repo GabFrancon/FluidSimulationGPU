@@ -1,5 +1,4 @@
 -- Ava Solution -------------------------------------------------------------
-
 include "Externals/Externals.lua"
 
 workspace "FluidSim"
@@ -8,9 +7,10 @@ workspace "FluidSim"
     configurations { "Debug", "Release", "Final" }
     flags { "MultiProcessorCompile" }
 
-    ProjectDir = "%{wks.location}/Projects/"
+    ProjectDir = "C:/Dev/FluidSim/Projects/"
     ObjRelativeDir = "/obj/%{cfg.architecture}-%{cfg.buildcfg}"
     BinRelativeDir = "/bin/%{cfg.architecture}-%{cfg.buildcfg}"
+    CudaRelativeDir = "/cuda/%{cfg.architecture}-%{cfg.buildcfg}"
 
     filter "action:vs*"
         -- Disable secure CRT warnings for Visual Studio
@@ -25,4 +25,6 @@ workspace "FluidSim"
 
     -- App --------------
     include "Ava"
+
+    require "Externals/premake5-cuda"
     include "FluidSimApp"

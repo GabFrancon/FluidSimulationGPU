@@ -4,9 +4,7 @@
 
 #include <Layers/Layer.h>
 #include <Events/Event.h>
-
 #include <UI/UICommon.h>
-#include <UI/IconsFontAwesome6.h>
 
 // Forward declare ImGui structures
 struct ImDrawData;

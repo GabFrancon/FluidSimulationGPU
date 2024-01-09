@@ -46,10 +46,8 @@ private:
     const Ava::Vec2f kBoundVolume = { 25.f, 14.f };
 
     const Ava::Color kClearColor = {  10 / 255.0f,  10 / 255.0f,  10 / 255.0f };
-    const Ava::Color kLightColor = {  79 / 255.0f, 132 / 255.0f, 237 / 255.0f };
-    const Ava::Color kDenseColor = {  10 / 255.0f,  47 / 255.0f, 119 / 255.0f };
-    const Ava::Color kWallColor =  { 195 / 255.0f,  50 / 255.0f,  30 / 255.0f };
-
+    const Ava::Color kFluidColor = {   0 / 255.0f,  37 / 255.0f, 147 / 255.0f };
+    const Ava::Color kBoundColor = { 195 / 255.0f,  50 / 255.0f,  30 / 255.0f };
 
     void _ResetParticles() const;
     void _DrawParticles() const;

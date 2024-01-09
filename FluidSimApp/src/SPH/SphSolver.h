@@ -8,9 +8,16 @@
 
 #include "SphGrid.h"
 #include "SphKernel.h"
+#include "SphAlloc.h"
 
 namespace sph
 {
+    static constexpr int kMaxFluidInCell = 10;
+    static constexpr int kMaxBoundaryInCell = 4;
+    static constexpr int kMaxFluidNeighbors = 20;
+    static constexpr int kMaxBoundaryNeighbors = 10;
+    static constexpr u32 kInvalidIdx = 0xFFFFFFFF;
+
     struct SphSettings
     {
         float spacing = 0.25f;
@@ -18,7 +25,7 @@ namespace sph
         float viscosity = 0.08f;
         float compressibility = 0.01f;
         float jacobiCoeff = 0.5f;
-        int maxIteration = 2;
+        int maxIteration = 4;
         Vec2f gravity = Vec2f(0.f, -9.81f);
         Vec2f dimensions = Vec2f(25.f, 14.f);
 
@@ -37,22 +44,21 @@ namespace sph
 
     // fluid particles
         int GetFluidCount() const;
+        void SetFluidPosition(u32 _particleID, const Vec2f& _position) const;
+        Vec2f GetFluidPosition(u32 _particleID) const;
 
-        void SetFluidPosition(int _particleID, const Vec2f& _position) const;
-        Vec2f GetFluidPosition(int _particleID) const;
+        void SetFluidVelocity(u32 _particleID, const Vec2f& _velocity) const;
+        Vec2f GetFluidVelocity(u32 _particleID) const;
 
-        void SetFluidVelocity(int _particleID, const Vec2f& _velocity) const;
-        Vec2f GetFluidVelocity(int _particleID) const;
+        void SetFluidDensity(u32 _particleID, float _density) const;
+        float GetFluidDensity(u32 _particleID) const;
 
-        void SetFluidDensity(int _particleID, float _density) const;
-        float GetFluidDensity(int _particleID) const;
+        float AverageFluidDensity() const;
 
     // boundary particles
         int GetBoundaryCount() const;
-
-        void SetBoundaryPosition(int _particleID, const Vec2f& _position) const;
-        Vec2f GetBoundaryPosition(int _particleID) const;
-
+        void SetBoundaryPosition(u32 _particleID, const Vec2f& _position) const;
+        Vec2f GetBoundaryPosition(u32 _particleID) const;
 
     private:
     // memory allocation
@@ -67,24 +73,23 @@ namespace sph
         void _CorrectIntegration();
 
     // advection prediction helpers
-        void _PreComputePsi(int i) const;
-        void _ComputeDensity(int i) const;
-        void _ComputeAdvectionForces(int i) const;
-        void _PredictVelocity(int i) const;
-        void _StoreDii(int i) const;
-        void _PredictDensity(int i) const;
-        void _InitPressure(int i) const;
-        void _StoreAii(int i) const;
+        void _PreComputePsi(u32 i) const;
+        void _ComputeDensity(u32 i) const;
+        void _ComputeAdvectionForces(u32 i) const;
+        void _PredictVelocity(u32 i) const;
+        void _StoreDii(u32 i) const;
+        void _PredictDensity(u32 i) const;
+        void _InitPressure(u32 i) const;
+        void _StoreAii(u32 i) const;
 
     // pressure solving helpers
-        void _StoreSumDijPj(int i) const;
-        void _ComputePressure(int i) const;
-        float _GetAverageDensity() const;
+        void _StoreSumDijPj(u32 i) const;
+        void _ComputePressure(u32 i) const;
 
     // integration helpers
-        void _ComputePressureForces(int i) const;
-        void _UpdateVelocity(int i) const;
-        void _UpdatePosition(int i) const;
+        void _ComputePressureForces(u32 i) const;
+        void _UpdateVelocity(u32 i) const;
+        void _UpdatePosition(u32 i) const;
 
     // data helpers
         SphKernel m_kernel;  // smooth kernel helper
@@ -114,20 +119,27 @@ namespace sph
 
     // internal data
         float* m_Psi = nullptr;        // boundary density numbers
-        Vec2f* m_Dii = nullptr;        // computation coefficient
-        float* m_Aii = nullptr;        // computation coefficient 
-        Vec2f* m_sumDijPj = nullptr;   // computation coefficient
-        Vec2f* m_Vadv = nullptr;       // advection velocity
-        float* m_Dadv = nullptr;       // advection density
-        float* m_Pl = nullptr;         // corrected pressure at iteration l
+        Vec2f* m_Dii = nullptr;        // intermediate computation coefficient
+        float* m_Aii = nullptr;        // intermediate computation coefficient 
+        Vec2f* m_sumDijPj = nullptr;   // intermediate computation coefficient
+        Vec2f* m_Vadv = nullptr;       // velocity without pressure forces
+        float* m_Dadv = nullptr;       // density without pressure forces
+        float* m_Pl = nullptr;         // corrected pressure at last iteration
         float* m_Dcorr = nullptr;      // corrected density
         Vec2f* m_Fadv = nullptr;       // non-pressure forces
         Vec2f* m_Fp = nullptr;         // pressure forces
 
     // neighboring structures
-        std::vector<IndexList> m_fGrid;      // fluid particles contained in each grid cell
-        std::vector<IndexList> m_fNeighbors; // fluid neighbors of each fluid particle
-        std::vector<IndexList> m_bGrid;      // boundary particles contained in each grid cell
-        std::vector<IndexList> m_bNeighbors; // boundary neighbors of each fluid particle
+        u32** m_fluidInGrid;           // list of fluid particles contained in each grid cell
+        u32* m_fluidInGridFlat;        // flat 1D array version of m_fluidInGrid
+
+        u32** m_fNeighbors;            // list of fluid particles neighboring each fluid particle
+        u32* m_fNeighborsFlat;         // flat array version of m_fNeighbors
+
+        u32** m_boundaryInGrid;        // list of boundary particles contained in each grid cell
+        u32* m_boundaryInGridFlat;     // flat array version of m_boundaryInGrid
+
+        u32** m_bNeighbors;            // list of boundary particles neighboring each fluid particle
+        u32* m_bNeighborsFlat;         // flat array version of m_bNeighbors
     };
 }

@@ -5,8 +5,6 @@ using namespace Ava;
 
 namespace sph
 {
-    using IndexList = std::vector<u32>;
-
     class SphGrid
     {
     public:
@@ -23,7 +21,7 @@ namespace sph
         int CellCount() const;
         float CellSize() const;
 
-        void GatherNeighborCells(IndexList& _neighbors, const Vec2f& _particle, float _radius) const;
+        void GatherNeighborCells(std::vector<u32>& _cellIndices, const Vec2f& _particle, float _radius) const;
 
     private:
         Vec2i m_gridCells;

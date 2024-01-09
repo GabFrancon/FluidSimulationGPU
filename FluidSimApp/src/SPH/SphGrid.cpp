@@ -51,9 +51,9 @@ namespace sph
         return m_cellSize;
     }
 
-    void SphGrid::GatherNeighborCells(IndexList& _neighbors, const Vec2f& _particle, float _radius) const
+    void SphGrid::GatherNeighborCells(std::vector<u32>& _cellIndices, const Vec2f& _particle, float _radius) const
     {
-        _neighbors.clear();
+        _cellIndices.clear();
 
         if (!Contains(_particle))
         {
@@ -71,13 +71,13 @@ namespace sph
         int count = 0;
         const int nbNeighbors = (jMax - jMin + 1) * (iMax - iMin + 1);
 
-        _neighbors.resize(nbNeighbors);
+        _cellIndices.resize(nbNeighbors);
 
         for (int j = jMin; j <= jMax; ++j)
         {
             for (int i = iMin; i <= iMax; ++i)
             {
-                _neighbors[count] = CellIndex(i, j);
+                _cellIndices[count] = CellIndex(i, j);
                 count++;
             }
         }

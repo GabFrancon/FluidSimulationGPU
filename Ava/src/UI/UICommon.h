@@ -9,13 +9,11 @@ namespace Ava {
 
     class Texture;
     class ShaderProgram;
-    class ShaderParameters;
 
     struct ShadedTexture
     {
         Texture* texture = nullptr;
         ShaderProgram* shader = nullptr;
-        ShaderParameters* parameters = nullptr;
     };
 
     /// @brief UI config flags
