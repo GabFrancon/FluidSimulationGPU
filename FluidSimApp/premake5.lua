@@ -23,7 +23,8 @@ project "FluidSimApp"
     files
     {
         "src/**.h",
-        "src/**.cpp"
+        "src/**.cpp",
+        "src/**.cuh"
     }
 
     includedirs
@@ -42,7 +43,7 @@ project "FluidSimApp"
 
     filter "system:windows"
         systemversion "latest"
-        cudaFiles { "src/**.cu" }
+        cudaFiles {"src/**.cu"}
 
     filter "system:linux"
         systemversion "latest"

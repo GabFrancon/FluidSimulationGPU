@@ -1,5 +1,11 @@
 #include "SphSolver.h"
 
+// CPU multi-threading
+#include "omp.h"
+
+// CPU profiling
+#include <Time/Profiler.h>
+
 namespace sph
 {
     SphSolver::SphSolver(const SphSettings& _settings)
@@ -10,7 +16,6 @@ namespace sph
         m_omega = _settings.jacobiCoeff;
         m_g  = _settings.gravity;
         m_h = _settings.spacing;
-        m_maxIter = _settings.maxIteration;
 
         m_m0 = m_rho0 * Math::square(m_h);
         m_kernel = SphKernel(m_h, 2);
@@ -368,7 +373,7 @@ namespace sph
         int iteration = 0;
         float error = 1.f;
 
-        while (error > m_eta && iteration < m_maxIter)
+        while (error > m_eta && iteration < kMaxPressureSolveIteration)
         {
     #pragma omp parallel for
             for (int i = 0; i < m_fluidCount; i++)
@@ -654,7 +659,7 @@ namespace sph
         m_Dcorr[i] += m_Dadv[i];
         float previousPl = m_Pl[i];
 
-        if (std::abs(m_Aii[i]) > FLT_MIN)
+        if (abs(m_Aii[i]) > FLT_MIN)
         {
             m_Pl[i] = (1 - m_omega) * previousPl + (m_omega / m_Aii[i]) * (m_rho0 - m_Dcorr[i]);
         }
@@ -663,7 +668,7 @@ namespace sph
             m_Pl[i] = 0.f;
         }
 
-        m_fPressure[i] = std::fmax(m_Pl[i], 0.f);
+        m_fPressure[i] = fmax(m_Pl[i], 0.f);
 
         m_Pl[i] = m_fPressure[i];
         m_Dcorr[i] += m_Aii[i] * previousPl;

@@ -28,7 +28,6 @@
 #include <type_traits>
 #include <queue>
 #include <bitset>
-#include <optional>
 #include <functional>
 #include <numeric>
 #include <mutex>

@@ -11,14 +11,11 @@ namespace sph
     public:
         SphKernel(float _h = 1, u32 _dim = 2);
 
-        float GetSmoothingLen() const { return m_h; }
-        u32 GetDimension() const { return m_dim; }
-
         template<typename VecType>
         float W(const VecType& _rij) const 
         {
             const float len = Math::length(_rij);
-            return f(len); 
+            return f(len);
         }
 
         template<typename VecType>
@@ -35,7 +32,7 @@ namespace sph
         float m_coeff[3];
         float m_derivCoeff[3];
 
-        float f(float _l) const;
-        float derivativeF(float _l) const;
+        float f(float _length) const;
+        float derivativeF(float _length) const;
     };
 }

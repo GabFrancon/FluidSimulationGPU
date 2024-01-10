@@ -55,11 +55,6 @@ namespace sph
     {
         _cellIndices.clear();
 
-        if (!Contains(_particle))
-        {
-            return;
-        }
-
         const Vec2i minCell = CellPosition(_particle - _radius);
         const Vec2i maxCell = CellPosition(_particle + _radius);
 

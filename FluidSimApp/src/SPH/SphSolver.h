@@ -1,23 +1,11 @@
 #pragma once
 
-// CPU multi-threading
-#include "omp.h"
-
-// CPU profiling
-#include <Time/Profiler.h>
-
 #include "SphGrid.h"
 #include "SphKernel.h"
 #include "SphAlloc.h"
 
 namespace sph
 {
-    static constexpr int kMaxFluidInCell = 10;
-    static constexpr int kMaxBoundaryInCell = 4;
-    static constexpr int kMaxFluidNeighbors = 20;
-    static constexpr int kMaxBoundaryNeighbors = 10;
-    static constexpr u32 kInvalidIdx = 0xFFFFFFFF;
-
     struct SphSettings
     {
         float spacing = 0.25f;
@@ -25,7 +13,6 @@ namespace sph
         float viscosity = 0.08f;
         float compressibility = 0.01f;
         float jacobiCoeff = 0.5f;
-        int maxIteration = 4;
         Vec2f gravity = Vec2f(0.f, -9.81f);
         Vec2f dimensions = Vec2f(25.f, 14.f);
 
@@ -104,7 +91,6 @@ namespace sph
         Vec2f m_g;           // gravity
         float m_m0;          // particles rest mass
         float m_omega;       // Jacobi's relaxed coefficient
-        int m_maxIter;       // max pressure solve iteration
 
     // boundary particle states
         Vec2f* m_bPosition = nullptr;  // boundary particles positions

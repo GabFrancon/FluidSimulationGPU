@@ -16,15 +16,16 @@ namespace sph
         m_derivCoeff[2] = m_coeff[2] / _h;
     }
 
-    float SphKernel::f(float _l) const
+    float SphKernel::f(float _length) const
     {
-        const float q = _l / m_h;
+        const float q = _length / m_h;
 
         if (q <= 1.f)
         {
             return m_coeff[m_dim - 1] * (1.f - 1.5f * Math::square(q) + 0.75f * Math::cube(q));
         }
-        else if (q <= 2.f)
+
+        if (q <= 2.f)
         {
             return m_coeff[m_dim - 1] * (0.25f * Math::cube(2.f - q));
         }
@@ -32,9 +33,9 @@ namespace sph
         return 0.f;
     }
 
-    float SphKernel::derivativeF(float _l) const
+    float SphKernel::derivativeF(float _length) const
     {
-        const float q = _l / m_h;
+        const float q = _length / m_h;
 
         if (q <= 1.f) 
         {
@@ -48,4 +49,5 @@ namespace sph
 
         return 0.f;
     }
+
 }
