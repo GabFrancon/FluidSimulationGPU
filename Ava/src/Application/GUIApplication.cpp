@@ -6,8 +6,8 @@
 #include <Time/TimeManager.h>
 #include <Time/Profiler.h>
 #include <Time/PrecisionTimer.h>
-#include <Events/WindowEvent.h>
 #include <Graphics/GraphicsContext.h>
+#include <Events/WindowEvent.h>
 
 namespace Ava {
 
