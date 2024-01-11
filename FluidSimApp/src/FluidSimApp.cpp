@@ -3,13 +3,13 @@
 
 // Ava
 #include <Core/EntryPoint.h>
-#include <Files/FileManager.h>
+#include <Time/Profiler.h>
 #include <Files/FilePath.h>
+#include <Files/FileManager.h>
 #include <Inputs/InputManager.h>
 #include <Graphics/GraphicsContext.h>
-#include <Time/Profiler.h>
-#include <Layers/UILayer.h>
 #include <Layers/DebugLayer.h>
+#include <Layers/UILayer.h>
 
 
 // ----- Create Ava Application ---------------------------------------
@@ -30,8 +30,8 @@ Ava::Application* Ava::CreateApplication(const CmdLineParser& _args)
     GraphicsSettings graphicSettings{};
     graphicSettings.enableVSync = true;                 // v-sync on
     graphicSettings.contextCount = 2;                   // use double buffering
-    graphicSettings.nbBindingSlotPerStage = 8;         // 8 resources available per shader stage
-    graphicSettings.maxDescriptorPerFrame = 200;       // up to 200 shader resources bound per frame (for each type)
+    graphicSettings.nbBindingSlotPerStage = 8;          // 8 resources available per shader stage
+    graphicSettings.maxDescriptorPerFrame = 200;        // up to 200 shader resources bound per frame (for each type)
 
     ProfilerSettings profilerSettings{};
     profilerSettings.numFramesToRecord = 5;
@@ -52,19 +52,20 @@ Ava::Application* Ava::CreateApplication(const CmdLineParser& _args)
 
 FluidSimApp::FluidSimApp(const Ava::GUIAppSettings& _settings) : GUIApplication(_settings)
 {
-    // Save UI config next to executable
+    // UI config is saved next to executable
     char exePath[MAX_PATH];
     Ava::FileMgr::GetExecutablePath(exePath);
     Ava::FilePath configUIPath(exePath);
     configUIPath.SetFileName("imgui.ini");
 
-    // Instantiates custom editor layer
+    // Fluid simulation layer handles the SPH solver and emits
+    // Im3D / ImGui calls to render the result on screen every frame.
     PushLayer<FluidSimLayer>();
 
-    // Instantiates built-in debug layer
+    // Built-in debug layer turns the Im3D instructions into draw calls.
     m_debugLayer = PushLayer<Ava::DebugLayer>();
 
-    // Instantiates built-in UI layer
+    // Built-in UI layer turns the ImGui instructions into draw calls.
     Ava::ImGuiSettings UISettings{};
     UISettings.fontScale = 2.f;
     UISettings.theme = Ava::UI::ThemeDark;
@@ -75,4 +76,14 @@ FluidSimApp::FluidSimApp(const Ava::GUIAppSettings& _settings) : GUIApplication(
 
 FluidSimApp::~FluidSimApp()
 {
+}
+
+Ava::UILayer* FluidSimApp::GetUILayer() const
+{
+    return m_UILayer.get();
+}
+
+Ava::DebugLayer* FluidSimApp::GetDebugLayer() const
+{
+    return m_debugLayer.get();
 }

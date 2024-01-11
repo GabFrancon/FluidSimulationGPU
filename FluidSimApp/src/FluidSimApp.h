@@ -7,10 +7,6 @@ namespace Ava {
     class DebugLayer;
 }
 
-namespace sph {
-    class FluidSimLayer;
-}
-
 class FluidSimApp final : public Ava::GUIApplication
 {
 public:
@@ -22,8 +18,8 @@ public:
         return static_cast<FluidSimApp&>(GetInstance());
     }
 
-    Ava::UILayer* GetUILayer() const { return m_UILayer.get(); }
-    Ava::DebugLayer* GetDebugLayer() const { return m_debugLayer.get(); }
+    Ava::UILayer* GetUILayer() const;
+    Ava::DebugLayer* GetDebugLayer() const;
 
 private:
     Ava::Ref<Ava::UILayer> m_UILayer;

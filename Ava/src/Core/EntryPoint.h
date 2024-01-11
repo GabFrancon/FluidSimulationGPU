@@ -45,5 +45,5 @@ int main(const int _argc, char** _argv)
     // Shutdown
     delete app;
 
-    return 0;
+    return EXIT_SUCCESS;
 }

@@ -2,20 +2,20 @@
 #include "FluidSimApp.h"
 
 // Ava
-#include <UI/ImGuiTools.h>
 #include <Math/BitUtils.h>
 #include <Time/Timestep.h>
 #include <Time/Profiler.h>
 #include <Time/ProfilerViewer.h>
 #include <Graphics/Color.h>
-#include <Graphics/GraphicsContext.h>
-#include <Graphics/Texture.h>
 #include <Graphics/Camera.h>
+#include <Graphics/Texture.h>
+#include <Graphics/FrameBuffer.h>
+#include <Graphics/GraphicsContext.h>
 #include <Layers/UILayer.h>
 #include <Layers/DebugLayer.h>
 #include <Debug/Im3D.h>
 #include <Debug/Log.h>
-#include <Graphics/FrameBuffer.h>
+#include <Debug/Assert.h>
 using namespace Ava;
 
 // SPH
@@ -33,10 +33,13 @@ FluidSimLayer::FluidSimLayer()
         settings.nbBoundaryParticles = 4 * static_cast<int>(kBoundVolume.x / kSpacing) + 4 * static_cast<int>((kBoundVolume.y - 4 * kSpacing) / kSpacing);
 
         m_solver = new sph::SphSolver(settings);
-        _ResetParticles();
+        _ResetScene();
+
+        m_profiler = new ProfilerViewer();
+        m_profiler->SetPauseKey(ImGuiKey_F4, "F4");
     }
 
-    // Visualization setup
+    // Rendering setup
     {
         TextureDescription colorDesc;
         colorDesc.width = 1920;
@@ -60,9 +63,6 @@ FluidSimLayer::FluidSimLayer()
         m_camera->SetPosition(Math::Origin);
         m_camera->SetViewVector(Math::AxisZ);
         m_camera->SetOrtho(0.f, kBoundVolume.x, 0.f, kBoundVolume.y, -2.f, 2.f);
-
-        m_profiler = new ProfilerViewer();
-        m_profiler->SetPauseKey(ImGuiKey_F4, "F4");
     }
 }
 
@@ -83,9 +83,9 @@ void FluidSimLayer::OnUpdate(Timestep& _dt)
     {
         AUTO_CPU_MARKER("SIMULATION");
 
-        for (int i = 0; i < kSimulationStepCount; i++)
+        for (int i = 0; i < m_simulationStepCount; i++)
         {
-            m_solver->Simulate(kSimulationStepSize);
+            m_solver->Simulate(m_simulationStepSize);
         }
     }
 }
@@ -99,7 +99,7 @@ void FluidSimLayer::OnRender(GraphicsContext* _ctx)
     _DisplayUI();
 }
 
-void FluidSimLayer::_ResetParticles() const
+void FluidSimLayer::_ResetScene() const
 {
     const float offset25  = 0.25f * kSpacing * 2.f;
     const float offset75  = 0.75f * kSpacing * 2.f;
@@ -154,17 +154,17 @@ void FluidSimLayer::_ResetParticles() const
         {
             for (float y = offset100; y < kFluidVolume.y + offset100; y += offset100)
             {
-                m_solver->SetFluidVelocity(particleID, { 0.f, 0.f });
-                m_solver->SetFluidPosition(particleID++, { x + offset25, y + offset25 });
+                m_solver->SetFluidVelocity(particleID, Vec2f(0.f, 0.f));
+                m_solver->SetFluidPosition(particleID++, Vec2f(x + offset25, y + offset25));
 
-                m_solver->SetFluidVelocity(particleID, { 0.f, 0.f });
-                m_solver->SetFluidPosition(particleID++, { x + offset25, y + offset75 });
+                m_solver->SetFluidVelocity(particleID, Vec2f(0.f, 0.f));
+                m_solver->SetFluidPosition(particleID++, Vec2f(x + offset25, y + offset75));
 
-                m_solver->SetFluidVelocity(particleID, { 0.f, 0.f });
-                m_solver->SetFluidPosition(particleID++, { x + offset75, y + offset25 });
+                m_solver->SetFluidVelocity(particleID, Vec2f(0.f, 0.f));
+                m_solver->SetFluidPosition(particleID++, Vec2f(x + offset75, y + offset25));
 
-                m_solver->SetFluidVelocity(particleID, { 0.f, 0.f });
-                m_solver->SetFluidPosition(particleID++, { x + offset75, y + offset75 });
+                m_solver->SetFluidVelocity(particleID, Vec2f(0.f, 0.f));
+                m_solver->SetFluidPosition(particleID++, Vec2f(x + offset75, y + offset75));
             }
         }
     }
@@ -207,7 +207,7 @@ void FluidSimLayer::_DrawParticles() const
 
 void FluidSimLayer::_DisplayUI()
 {
-    // DOCK SPACE BEGIN
+    // Dock space begin
     {
         constexpr ImGuiWindowFlags windowFlags = 
             ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | 
@@ -233,9 +233,11 @@ void FluidSimLayer::_DisplayUI()
         }
     }
 
-    // SETTINGS
+    // Settings window
     {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
         ImGui::Begin("Settings");
+
         const ImVec2 regionSize = ImGui::GetContentRegionAvail();
         const ImVec2 buttonSize = ImVec2(regionSize.x, 50.f);
 
@@ -246,7 +248,7 @@ void FluidSimLayer::_DisplayUI()
 
         if (ImGui::Button("Reset", buttonSize))
         {
-            _ResetParticles();
+            _ResetScene();
         }
 
         ImGui::Text("Fluid particles = %d", m_solver->GetFluidCount());
@@ -256,9 +258,10 @@ void FluidSimLayer::_DisplayUI()
         ImGui::Text("Compressibility error : %.2f%%", densityRatio * 100.f);
 
         ImGui::End();
+        ImGui::PopStyleVar();
     }
 
-    // VIEWPORT
+    // Viewport window
     {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
         ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoScrollWithMouse);
@@ -279,9 +282,9 @@ void FluidSimLayer::_DisplayUI()
         ImGui::PopStyleVar();
     }
 
-    // PROFILER
+    // Profiler window
     m_profiler->Display(nullptr);
 
-    // DOCK SPACE END
+    // Dock space end
     ImGui::End();
 }
