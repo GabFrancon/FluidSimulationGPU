@@ -31,7 +31,6 @@ project "FluidSimApp"
     {
         "src",
         "%{IncludeDir.Ava}",
-        "%{IncludeDir.rapidjson}",
         "%{IncludeDir.ImGui}",
         "%{IncludeDir.glm}"
     }
@@ -43,6 +42,7 @@ project "FluidSimApp"
 
     filter "system:windows"
         systemversion "latest"
+        links { "shlwapi.lib", "dwmapi.lib", "dbghelp.lib" }
         cudaFiles {"src/**.cu"}
 
     filter "system:linux"

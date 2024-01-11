@@ -39,7 +39,6 @@ project "Ava"
         "%{IncludeDir.RenderDoc}",
         "%{IncludeDir.spdlog}",
         "%{IncludeDir.glm}",
-        "%{IncludeDir.rapidjson}",
         "%{IncludeDir.LZ4}",
         "%{IncludeDir.stb}"
     }
@@ -62,7 +61,6 @@ project "Ava"
 
     filter "system:windows"
         systemversion "latest"
-        links { "shlwapi.lib", "dwmapi.lib", "dbghelp.lib" }
 
     filter "system:linux"
         systemversion "latest"
