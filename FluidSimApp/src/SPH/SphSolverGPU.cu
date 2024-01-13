@@ -3,19 +3,64 @@
 #include <Time/Profiler.h>
 #include <Debug/Assert.h>
 
-// GPU multi-threading
+// CUDA library
 #include "cuda.h"
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
+#define CUDA_CHECK_ERROR(_cudaCmd)                                                              \
+{                                                                                               \
+    cudaError_t cudaStatus;                                                                     \
+    cudaStatus = _cudaCmd;                                                                      \
+    AVA_ASSERT(cudaStatus == cudaSuccess, "CUDA error: %s\n", cudaGetErrorString(cudaStatus));  \
+}
+
+
 namespace sph
 {
-    //__________________________________________________________________________
-    // Kernel function
+    cudaEvent_t s_fNeighborsTransferComplete, s_bNeighborsTransferComplete;
+    cudaEvent_t s_fPositionTransferComplete, s_fVelocityTransferComplete, s_fDensityTransferComplete;
 
-    __device__ float KernelGpu::f(float _len) const
+    //__________________________________________________________________________
+    // Math Functions
+
+    __device__ float square(float _a)
     {
-        const float q = _len / m_h;
+        return _a * _a;
+    }
+
+    __device__ float cube(float _a)
+    {
+        return _a * _a * _a;
+    }
+
+    __device__ float dot(const float2& _vecA, const float2& _vecB)
+    {
+        return _vecA.x * _vecB.x + _vecA.y * _vecB.y;
+    }
+
+    __device__ float equal(const float2& _vecA, const float2& _vecB)
+    {
+        return _vecA.x == _vecB.x && _vecA.y == _vecB.y;
+    }
+
+    __device__ float length(const float2& _vec)
+    {
+        return sqrtf(dot(_vec, _vec));
+    }
+
+    __device__ float lengthSquared(const float2& _vec)
+    {
+        return dot(_vec, _vec);
+    }
+
+
+    //__________________________________________________________________________
+    // Kernel Functions
+
+    __device__ float KernelGpu::f(float _length) const
+    {
+        const float q = _length / m_h;
 
         if (q <= 1.f)
         {
@@ -24,15 +69,15 @@ namespace sph
 
         if (q <= 2.f)
         {
-            return m_coeff * (0.25f * cube(2.f - q));
+            return m_coeff * 0.25f * cube(2.f - q);
         }
 
         return 0.f;
     }
 
-    __device__ float KernelGpu::derivativeF(float _len) const
+    __device__ float KernelGpu::derivativeF(float _length) const
     {
-        const float q = _len / m_h;
+        const float q = _length / m_h;
 
         if (q <= 1.f) 
         {
@@ -74,96 +119,186 @@ namespace sph
         m_boundaryCount = _bCount;
 
         // Fluid state
-        cudaMalloc((void**)&m_fPosition, m_fluidCount * sizeof(float2));
-        cudaMemset(m_fPosition, 0, sizeof(float2) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_fPosition, m_fluidCount * sizeof(float2)));
+        CUDA_CHECK_ERROR(cudaMemset(m_fPosition, 0, sizeof(float2) * m_fluidCount));
 
-        cudaMalloc((void**)&m_fDensity, m_fluidCount * sizeof(float));
-        cudaMemset(m_fDensity, 0, sizeof(float) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_fDensity, m_fluidCount * sizeof(float)));
+        CUDA_CHECK_ERROR(cudaMemset(m_fDensity, 0, sizeof(float) * m_fluidCount));
 
-        cudaMalloc((void**)&m_fVelocity, m_fluidCount * sizeof(float2));
-        cudaMemset(m_fVelocity, 0, sizeof(float2) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_fVelocity, m_fluidCount * sizeof(float2)));
+        CUDA_CHECK_ERROR(cudaMemset(m_fVelocity, 0, sizeof(float2) * m_fluidCount));
 
-        cudaMalloc((void**)&m_fPressure, m_fluidCount * sizeof(float));
-        cudaMemset(m_fPressure, 0, sizeof(float) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_fPressure, m_fluidCount * sizeof(float)));
+        CUDA_CHECK_ERROR(cudaMemset(m_fPressure, 0, sizeof(float) * m_fluidCount));
 
         // Boundary state
-        cudaMalloc((void**)&m_bPosition, m_boundaryCount * sizeof(float2));
-        cudaMemset(m_bPosition, 0, sizeof(float2) * m_boundaryCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_bPosition, m_boundaryCount * sizeof(float2)));
+        CUDA_CHECK_ERROR(cudaMemset(m_bPosition, 0, sizeof(float2) * m_boundaryCount));
 
-        cudaMalloc((void**)&m_Psi, m_boundaryCount * sizeof(float));
-        cudaMemset(m_Psi, 0, sizeof(float) * m_boundaryCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_Psi, m_boundaryCount * sizeof(float)));
+        CUDA_CHECK_ERROR(cudaMemset(m_Psi, 0, sizeof(float) * m_boundaryCount));
 
         // Internal data
-        cudaMalloc((void**)&m_Dii, m_fluidCount * sizeof(float2));
-        cudaMemset(m_Dii, 0, sizeof(float2) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_Dii, m_fluidCount * sizeof(float2)));
+        CUDA_CHECK_ERROR(cudaMemset(m_Dii, 0, sizeof(float2) * m_fluidCount));
 
-        cudaMalloc((void**)&m_Aii, m_fluidCount * sizeof(float));
-        cudaMemset(m_Aii, 0, sizeof(float) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_Aii, m_fluidCount * sizeof(float)));
+        CUDA_CHECK_ERROR(cudaMemset(m_Aii, 0, sizeof(float) * m_fluidCount));
 
-        cudaMalloc((void**)&m_sumDijPj, m_fluidCount * sizeof(float2));
-        cudaMemset(m_sumDijPj, 0, sizeof(float2) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_sumDijPj, m_fluidCount * sizeof(float2)));
+        CUDA_CHECK_ERROR(cudaMemset(m_sumDijPj, 0, sizeof(float2) * m_fluidCount));
 
-        cudaMalloc((void**)&m_Vadv, m_fluidCount * sizeof(float2));
-        cudaMemset(m_Vadv, 0, sizeof(float2) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_Vadv, m_fluidCount * sizeof(float2)));
+        CUDA_CHECK_ERROR(cudaMemset(m_Vadv, 0, sizeof(float2) * m_fluidCount));
 
-        cudaMalloc((void**)&m_Dadv, m_fluidCount * sizeof(float));
-        cudaMemset(m_Dadv, 0, sizeof(float) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_Dadv, m_fluidCount * sizeof(float)));
+        CUDA_CHECK_ERROR(cudaMemset(m_Dadv, 0, sizeof(float) * m_fluidCount));
 
-        cudaMalloc((void**)&m_Pl, m_fluidCount * sizeof(float));
-        cudaMemset(m_Pl, 0, sizeof(float) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_Pl, m_fluidCount * sizeof(float)));
+        CUDA_CHECK_ERROR(cudaMemset(m_Pl, 0, sizeof(float) * m_fluidCount));
 
-        cudaMalloc((void**)&m_Dcorr, m_fluidCount * sizeof(float));
-        cudaMemset(m_Dcorr, 0, sizeof(float) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_Dcorr, m_fluidCount * sizeof(float)));
+        CUDA_CHECK_ERROR(cudaMemset(m_Dcorr, 0, sizeof(float) * m_fluidCount));
 
-        cudaMalloc((void**)&m_Fadv, m_fluidCount * sizeof(float2));
-        cudaMemset(m_Fadv, 0, sizeof(float2) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_Fadv, m_fluidCount * sizeof(float2)));
+        CUDA_CHECK_ERROR(cudaMemset(m_Fadv, 0, sizeof(float2) * m_fluidCount));
 
-        cudaMalloc((void**)&m_Fp, m_fluidCount * sizeof(float2));
-        cudaMemset(m_Fp, 0, sizeof(float2) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_Fp, m_fluidCount * sizeof(float2)));
+        CUDA_CHECK_ERROR(cudaMemset(m_Fp, 0, sizeof(float2) * m_fluidCount));
 
         // Neighboring structures
-        cudaMalloc((void**)&m_fNeighborsFlat, m_fluidCount * (kMaxFluidNeighbors + 1) * sizeof(u32));
-        cudaMemset(m_fNeighborsFlat, 0, sizeof(u32) * (kMaxFluidNeighbors + 1) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_fNeighborsFlat, m_fluidCount * (kMaxFluidNeighbors + 1) * sizeof(u32)));
+        CUDA_CHECK_ERROR(cudaMemset(m_fNeighborsFlat, 0, sizeof(u32) * (kMaxFluidNeighbors + 1) * m_fluidCount));
 
-        cudaMalloc((void**)&m_bNeighborsFlat, m_fluidCount * (kMaxBoundaryNeighbors + 1) * sizeof(u32));
-        cudaMemset(m_bNeighborsFlat, 0, sizeof(u32) * (kMaxBoundaryNeighbors + 1) * m_fluidCount);
+        CUDA_CHECK_ERROR(cudaMalloc((void**)&m_bNeighborsFlat, m_fluidCount * (kMaxBoundaryNeighbors + 1) * sizeof(u32)));
+        CUDA_CHECK_ERROR(cudaMemset(m_bNeighborsFlat, 0, sizeof(u32) * (kMaxBoundaryNeighbors + 1) * m_fluidCount));
+
+        // CUDA memory events
+        CUDA_CHECK_ERROR(cudaEventCreate(&s_fNeighborsTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventCreate(&s_bNeighborsTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventCreate(&s_fPositionTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventCreate(&s_fVelocityTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventCreate(&s_fDensityTransferComplete));
+
+        // GPU dispatch grid
+        m_blockSize = 256;
+        m_gridSize = (m_fluidCount + m_blockSize - 1) / m_blockSize;
     }
 
     __host__ void SceneGpu::Deallocate()
     {
-        cudaFree(m_fPosition);
-        cudaFree(m_fDensity);
-        cudaFree(m_fVelocity);
-        cudaFree(m_fPressure);
+        CUDA_CHECK_ERROR(cudaEventDestroy(s_fNeighborsTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventDestroy(s_bNeighborsTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventDestroy(s_fPositionTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventDestroy(s_fVelocityTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventDestroy(s_fDensityTransferComplete));
 
-        cudaFree(m_bPosition);
-        cudaFree(m_Psi);
+        CUDA_CHECK_ERROR(cudaFree(m_fPosition));
+        CUDA_CHECK_ERROR(cudaFree(m_fDensity));
+        CUDA_CHECK_ERROR(cudaFree(m_fVelocity));
+        CUDA_CHECK_ERROR(cudaFree(m_fPressure));
 
-        cudaFree(m_Dii);
-        cudaFree(m_Aii);
-        cudaFree(m_sumDijPj);
-        cudaFree(m_Vadv);
-        cudaFree(m_Dadv);
-        cudaFree(m_Pl);
-        cudaFree(m_Dcorr);
-        cudaFree(m_Fadv);
-        cudaFree(m_Fp);
+        CUDA_CHECK_ERROR(cudaFree(m_bPosition));
+        CUDA_CHECK_ERROR(cudaFree(m_Psi));
 
-        cudaFree(m_fNeighborsFlat);
-        cudaFree(m_bNeighborsFlat);
+        CUDA_CHECK_ERROR(cudaFree(m_Dii));
+        CUDA_CHECK_ERROR(cudaFree(m_Aii));
+        CUDA_CHECK_ERROR(cudaFree(m_sumDijPj));
+        CUDA_CHECK_ERROR(cudaFree(m_Vadv));
+        CUDA_CHECK_ERROR(cudaFree(m_Dadv));
+        CUDA_CHECK_ERROR(cudaFree(m_Pl));
+        CUDA_CHECK_ERROR(cudaFree(m_Dcorr));
+        CUDA_CHECK_ERROR(cudaFree(m_Fadv));
+        CUDA_CHECK_ERROR(cudaFree(m_Fp));
+
+        CUDA_CHECK_ERROR(cudaFree(m_fNeighborsFlat));
+        CUDA_CHECK_ERROR(cudaFree(m_bNeighborsFlat));
 
         m_fluidCount = 0;
         m_boundaryCount = 0;
     }
 
+
+    //___________________________________________________________
+    // Memory Transfer
+
+    __host__ void SceneGpu::UploadNeighbors(const void* _fNeighbors, const void* _bNeighbors) const
+    {
+        AUTO_CPU_MARKER("Upload Neighbors");
+
+        // Asynchronous fluid neighbors memcpy from host to device
+        CUDA_CHECK_ERROR(cudaMemcpyAsync(m_fNeighborsFlat, _fNeighbors, sizeof(u32) * (kMaxFluidNeighbors + 1) * m_fluidCount, cudaMemcpyHostToDevice));
+
+        // Record an event after the memcpy is complete
+        CUDA_CHECK_ERROR(cudaEventRecord(s_fNeighborsTransferComplete));
+
+        // Asynchronous boundary neighbors memcpy from host to device
+        CUDA_CHECK_ERROR(cudaMemcpyAsync(m_bNeighborsFlat, _bNeighbors, sizeof(u32) * (kMaxBoundaryNeighbors + 1) * m_fluidCount, cudaMemcpyHostToDevice));
+
+        // Record an event after the memcpy is complete
+        CUDA_CHECK_ERROR(cudaEventRecord(s_bNeighborsTransferComplete));
+
+        // Synchronize with both memcpy events
+        CUDA_CHECK_ERROR(cudaEventSynchronize(s_fNeighborsTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventSynchronize(s_bNeighborsTransferComplete));
+
+    }
+
+    __host__ void SceneGpu::UploadBoundaryState(const void* _bPosition, const void* _Psi) const
+    {
+        CUDA_CHECK_ERROR(cudaMemcpy(m_bPosition, _bPosition, sizeof(float2) * m_boundaryCount, cudaMemcpyHostToDevice));
+        CUDA_CHECK_ERROR(cudaMemcpy(m_Psi, _Psi, sizeof(float) * m_boundaryCount, cudaMemcpyHostToDevice));
+    }
+
+    __host__ void SceneGpu::UploadFluidState(const void* _fPosition, const void* _fVelocity, const void* _fDensity) const
+    {
+        CUDA_CHECK_ERROR(cudaMemcpy(m_fPosition, _fPosition, sizeof(float2) * m_fluidCount, cudaMemcpyHostToDevice));
+        CUDA_CHECK_ERROR(cudaMemcpy(m_fVelocity, _fVelocity, sizeof(float2) * m_fluidCount, cudaMemcpyHostToDevice));
+        CUDA_CHECK_ERROR(cudaMemcpy(m_fDensity, _fDensity, sizeof(float) * m_fluidCount, cudaMemcpyHostToDevice));
+    }
+
+    __host__ void SceneGpu::RetrieveFluidState(void* _fPosition, void* _fVelocity, void* _fDensity) const
+    {
+        AUTO_CPU_MARKER("Retrieve Fluid State");
+
+        // Asynchronous fluid position memcpy from device to host
+        CUDA_CHECK_ERROR(cudaMemcpyAsync(_fPosition, m_fPosition, sizeof(float2) * m_fluidCount, cudaMemcpyDeviceToHost));
+
+        // Record an event after the memcpy is complete
+        CUDA_CHECK_ERROR(cudaEventRecord(s_fPositionTransferComplete));
+
+        // Asynchronous fluid velocity memcpy from device to host
+        CUDA_CHECK_ERROR(cudaMemcpy(_fVelocity, m_fVelocity, sizeof(float2) * m_fluidCount, cudaMemcpyDeviceToHost));
+
+        // Record an event after the memcpy is complete
+        CUDA_CHECK_ERROR(cudaEventRecord(s_fVelocityTransferComplete));
+
+        // Asynchronous fluid density memcpy from device to host
+        CUDA_CHECK_ERROR(cudaMemcpy(_fDensity, m_fDensity, sizeof(float) * m_fluidCount, cudaMemcpyDeviceToHost));
+
+        // Record an event after the memcpy is complete
+        CUDA_CHECK_ERROR(cudaEventRecord(s_fDensityTransferComplete));
+
+        // Synchronize with all memcpy events
+        CUDA_CHECK_ERROR(cudaEventSynchronize(s_fPositionTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventSynchronize(s_fVelocityTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventSynchronize(s_fDensityTransferComplete));
+    }
+
+
+    //___________________________________________________________
+    // Neighbor Access
+
     __device__ u32 SceneGpu::GetFluidNeighbor(u32 _particleID, int _neighborIdx) const
     {
-        return m_fNeighborsFlat[get_idx(_particleID, _neighborIdx, kMaxFluidNeighbors)];
+        const int index = _particleID * (kMaxFluidNeighbors + 1) + _neighborIdx;
+        return m_fNeighborsFlat[index];
     }
 
     __device__ u32 SceneGpu::GetBoundaryNeighbor(u32 _particleID, int _neighborIdx) const
     {
-        return m_bNeighborsFlat[get_idx(_particleID, _neighborIdx, kMaxBoundaryNeighbors)];
+        const int index = _particleID * (kMaxBoundaryNeighbors + 1) + _neighborIdx;
+        return m_bNeighborsFlat[index];
     }
 
 
@@ -199,7 +334,7 @@ namespace sph
 
     __device__ void SceneGpu::ComputeAdvectionForces(u32 i) const
     {
-        m_Fadv[i] = { 0.f, 0.f}; 
+        m_Fadv[i] = { 0.f, 0.f };
 
         // add body force
         m_Fadv[i].y += m_m0 * m_gY;
@@ -341,13 +476,13 @@ namespace sph
                 const float2 gradW = m_kernel.GradW(pos_ij);
                 const float coeff = -square(m_dt) * m_m0 / square(m_fDensity[i]);
 
-                float2 d_ji;
-                d_ji.x = coeff * (-gradW.x);
-                d_ji.y = coeff * (-gradW.y);
+                float2 D_ji;
+                D_ji.x = coeff * (-gradW.x);
+                D_ji.y = coeff * (-gradW.y);
 
                 float2 temp;
-                temp.x = m_Dii[i].x - d_ji.x;
-                temp.y = m_Dii[i].y - d_ji.y;
+                temp.x = m_Dii[i].x - D_ji.x;
+                temp.y = m_Dii[i].y - D_ji.y;
 
                 m_Aii[i] += m_m0 * dot(temp, gradW);
             }
@@ -374,7 +509,7 @@ namespace sph
 
     __device__ void SceneGpu::StoreSumDijPj(u32 i) const
     {
-        m_sumDijPj[i] = {0.f, 0.f};
+        m_sumDijPj[i] = { 0.f, 0.f };
 
         for (int idx = 0; GetFluidNeighbor(i, idx) != kInvalidIdx; idx++)
         {
@@ -387,7 +522,7 @@ namespace sph
                 pos_ij.y = m_fPosition[i].y - m_fPosition[j].y;
 
                 const float2 gradW = m_kernel.GradW(pos_ij);
-                const float coeff = -m_m0 * m_fPressure[j] / square(m_fDensity[j]);
+                const float coeff = -m_m0 * m_Pl[j] / square(m_fDensity[j]);
 
                 m_sumDijPj[i].x += coeff * gradW.x;
                 m_sumDijPj[i].y += coeff * gradW.y;
@@ -416,13 +551,13 @@ namespace sph
                 const float2 gradW = m_kernel.GradW(pos_ij);
                 const float coeff = -square(m_dt) * m_m0 / square(m_fDensity[i]);
 
-                float2 d_ji;
-                d_ji.x = coeff * (-gradW.x);
-                d_ji.y = coeff * (-gradW.y);
+                float2 D_ji;
+                D_ji.x = coeff * (-gradW.x);
+                D_ji.y = coeff * (-gradW.y);
 
                 float2 temp;
-                temp.x = m_sumDijPj[i].x - m_Dii[j].x * m_Pl[j] - (m_sumDijPj[j].x - d_ji.x * m_Pl[i]);
-                temp.y = m_sumDijPj[i].y - m_Dii[j].y * m_Pl[j] - (m_sumDijPj[j].y - d_ji.y * m_Pl[i]);
+                temp.x = m_sumDijPj[i].x - m_Dii[j].x * m_Pl[j] - (m_sumDijPj[j].x - D_ji.x * m_Pl[i]);
+                temp.y = m_sumDijPj[i].y - m_Dii[j].y * m_Pl[j] - (m_sumDijPj[j].y - D_ji.y * m_Pl[i]);
 
                 m_Dcorr[i] += m_m0 * dot(temp, gradW);
             }
@@ -443,21 +578,23 @@ namespace sph
         }
 
         m_Dcorr[i] += m_Dadv[i];
-        float previousPl = m_Pl[i];
 
-        if (abs(m_Aii[i]) > FLT_MIN)
+        if (fabs(m_Aii[i]) > FLT_EPSILON)
         {
-            m_Pl[i] = (1 - m_omega) * previousPl + (m_omega / m_Aii[i]) * (m_rho0 - m_Dcorr[i]);
+            m_fPressure[i] = fmax(0.f, (1 - m_omega) * m_Pl[i] + (m_omega / m_Aii[i]) * (m_rho0 - m_Dcorr[i]));
         }
         else
         {
-            m_Pl[i] = 0.f;
+            m_fPressure[i] = 0.f;
         }
+    }
 
-        m_fPressure[i] = fmax(m_Pl[i], 0.f);
+    __device__ void SceneGpu::SavePressure(u32 i) const
+    {
+        m_Dcorr[i] += m_Aii[i] * m_Pl[i];
 
+        // save pressure for next iteration
         m_Pl[i] = m_fPressure[i];
-        m_Dcorr[i] += m_Aii[i] * previousPl;
     }
 
 
@@ -497,7 +634,7 @@ namespace sph
                 pos_ij.y = m_fPosition[i].y - m_bPosition[j].y;
 
                 const float2 gradW = m_kernel.GradW(pos_ij);
-                const float coeff = -m_m0 * m_Psi[j] * m_fPressure[i] / square(m_fDensity[i]);
+                const float coeff = -m_m0 * m_Psi[j] * (m_fPressure[i] / square(m_fDensity[i]));
 
                 m_Fp[i].x += coeff * gradW.x;
                 m_Fp[i].y += coeff * gradW.y;
@@ -519,97 +656,164 @@ namespace sph
 
 
     //___________________________________________________________
-    // CUDA compute kernels
+    // CUDA Compute Kernels
 
-    __global__ void predictAdvectionKernel(SceneGpu _scene)
+    __global__ void computeDensityKernel(SceneGpu _scene)
     {
         const u32 particleID = blockIdx.x * blockDim.x + threadIdx.x;
 
-        // out-ob-bound discard
+        // out-of-bound discard
         if (particleID >= _scene.m_fluidCount)
         {
             return;
         }
 
         _scene.ComputeDensity(particleID);
+    }
 
-        __syncthreads();
+    __global__ void computeDiiKernel(SceneGpu _scene)
+    {
+        const u32 particleID = blockIdx.x * blockDim.x + threadIdx.x;
+
+        // out-of-bound discard
+        if (particleID >= _scene.m_fluidCount)
+        {
+            return;
+        }
 
         _scene.ComputeAdvectionForces(particleID);
         _scene.PredictVelocity(particleID);
         _scene.StoreDii(particleID);
+    }
 
-        __syncthreads();
+    __global__ void computeAiiKernel(SceneGpu _scene)
+    {
+        const u32 particleID = blockIdx.x * blockDim.x + threadIdx.x;
+
+        // out-of-bound discard
+        if (particleID >= _scene.m_fluidCount)
+        {
+            return;
+        }
 
         _scene.PredictDensity(particleID);
         _scene.InitPressure(particleID);
         _scene.StoreAii(particleID);
     }
 
-    __global__ void pressureSolveKernel(SceneGpu _scene)
+    __global__ void computeSumDijPjKernel(SceneGpu _scene)
     {
         const u32 particleID = blockIdx.x * blockDim.x + threadIdx.x;
 
-        // out-ob-bound discard
+        // out-of-bound discard
         if (particleID >= _scene.m_fluidCount)
         {
             return;
         }
 
         _scene.StoreSumDijPj(particleID);
+    }
 
-        __syncthreads();
+    __global__ void computePressureKernel(SceneGpu _scene)
+    {
+        const u32 particleID = blockIdx.x * blockDim.x + threadIdx.x;
+
+        // out-of-bound discard
+        if (particleID >= _scene.m_fluidCount)
+        {
+            return;
+        }
 
         _scene.ComputePressure(particleID);
     }
 
-    __global__ void integrationKernel(SceneGpu _scene)
+    __global__ void savePressureKernel(SceneGpu _scene)
     {
         const u32 particleID = blockIdx.x * blockDim.x + threadIdx.x;
 
-        // out-ob-bound discard
+        // out-of-bound discard
+        if (particleID >= _scene.m_fluidCount)
+        {
+            return;
+        }
+
+        _scene.SavePressure(particleID);
+    }
+
+    __global__ void computePressureForcesKernel(SceneGpu _scene)
+    {
+        const u32 particleID = blockIdx.x * blockDim.x + threadIdx.x;
+
+        // out-of-bound discard
         if (particleID >= _scene.m_fluidCount)
         {
             return;
         }
 
         _scene.ComputePressureForces(particleID);
+    }
 
-        __syncthreads();
+    __global__ void integratePositionKernel(SceneGpu _scene)
+    {
+        const u32 particleID = blockIdx.x * blockDim.x + threadIdx.x;
+
+        // out-of-bound discard
+        if (particleID >= _scene.m_fluidCount)
+        {
+            return;
+        }
 
         _scene.UpdateVelocity(particleID);
         _scene.UpdatePosition(particleID);
     }
 
-    __host__ void simulate(SceneGpu _scene)
+
+    //___________________________________________________________
+    // Main simulation Steps
+
+    __host__ void SceneGpu::PredictAdvection() const
     {
-        constexpr u32 blockSize = 256;
-        const u32 gridSize = (_scene.m_fluidCount + blockSize - 1) / blockSize;
+        AUTO_CPU_MARKER("Predict Advection");
 
+        computeDensityKernel<<<m_gridSize, m_blockSize>>>(*this);
+        CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+
+        computeDiiKernel<<<m_gridSize, m_blockSize>>>(*this);
+        CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+
+        computeAiiKernel<<<m_gridSize, m_blockSize>>>(*this);
+        CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+    }
+
+    __host__ void SceneGpu::SolvePressure() const
+    {
+        AUTO_CPU_MARKER("Pressure Solve");
+
+        int iteration = 0;
+
+        while (iteration < kMaxPressureSolveIteration)
         {
-            AUTO_CPU_MARKER("Predict Advection");
-            predictAdvectionKernel<<<gridSize, blockSize>>>(_scene);
+            computeSumDijPjKernel<<<m_gridSize, m_blockSize>>>(*this);
+            CUDA_CHECK_ERROR(cudaDeviceSynchronize());
 
-            cudaDeviceSynchronize();
-            const cudaError_t cudaError = cudaGetLastError();
-            AVA_ASSERT(cudaError == cudaSuccess, "CUDA error: %s", cudaGetErrorString(cudaError));
-        }
-        {
-            AUTO_CPU_MARKER("Pressure Solve");
-            pressureSolveKernel<<<gridSize, blockSize>>>(_scene);
+            computePressureKernel<<<m_gridSize, m_blockSize>>>(*this);
+            CUDA_CHECK_ERROR(cudaDeviceSynchronize());
 
-            cudaDeviceSynchronize();
-            const cudaError_t cudaError = cudaGetLastError();
-            AVA_ASSERT(cudaError == cudaSuccess, "CUDA error: %s", cudaGetErrorString(cudaError));
-        }
-        {
-            AUTO_CPU_MARKER("Integration");
-            integrationKernel<<<gridSize, blockSize>>>(_scene);
+            savePressureKernel<<<m_gridSize, m_blockSize>>>(*this);
+            CUDA_CHECK_ERROR(cudaDeviceSynchronize());
 
-            cudaDeviceSynchronize();
-            const cudaError_t cudaError = cudaGetLastError();
-            AVA_ASSERT(cudaError == cudaSuccess, "CUDA error: %s", cudaGetErrorString(cudaError));
+            iteration++;
         }
     }
 
+    __host__ void SceneGpu::Integrate() const
+    {
+        AUTO_CPU_MARKER("GPU Integration");
+
+        computePressureForcesKernel<<<m_gridSize, m_blockSize>>>(*this);
+        CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+
+        integratePositionKernel<<<m_gridSize, m_blockSize>>>(*this);
+        CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+    }
 }

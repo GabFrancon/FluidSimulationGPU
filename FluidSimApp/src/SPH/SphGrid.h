@@ -22,6 +22,7 @@ namespace sph
         float CellSize() const;
 
         void GatherNeighborCells(std::vector<u32>& _cellIndices, const Vec2f& _particle, float _radius) const;
+        Vec2f ClampPosition(const Vec2f& _particle) const;
 
     private:
         Vec2i m_gridCells;

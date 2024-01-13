@@ -85,7 +85,7 @@ void FluidSimLayer::OnUpdate(Timestep& _dt)
 
         for (int i = 0; i < m_simulationStepCount; i++)
         {
-            m_solver->Simulate(m_simulationStepSize);
+            m_solver->Simulate(m_simulationStepSize, m_enableGpuSimulation);
         }
     }
 }
@@ -250,6 +250,8 @@ void FluidSimLayer::_DisplayUI()
         {
             _ResetScene();
         }
+
+        ImGui::Checkbox("GPU simulation", &m_enableGpuSimulation);
 
         ImGui::Text("Fluid particles = %d", m_solver->GetFluidCount());
         ImGui::Text("Boundary particles = %d", m_solver->GetBoundaryCount());

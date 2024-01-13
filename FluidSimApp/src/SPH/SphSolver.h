@@ -6,6 +6,8 @@
 
 namespace sph
 {
+    struct SceneGpu;
+
     struct SphSettings
     {
         float spacing = 0.25f;
@@ -27,7 +29,7 @@ namespace sph
         ~SphSolver();
 
         void Prepare();
-        void Simulate(float _dt);
+        void Simulate(float _dt, bool _onGpu = false);
 
     // fluid particles
         int GetFluidCount() const;
@@ -57,7 +59,7 @@ namespace sph
         void _SearchNeighbors();
         void _PredictAdvection();
         void _SolvePressure();
-        void _CorrectIntegration();
+        void _Integrate();
 
     // advection prediction helpers
         void _PreComputePsi(u32 i) const;
@@ -72,6 +74,7 @@ namespace sph
     // pressure solving helpers
         void _StoreSumDijPj(u32 i) const;
         void _ComputePressure(u32 i) const;
+        void _SavePressure(u32 i) const;
 
     // integration helpers
         void _ComputePressureForces(u32 i) const;
@@ -81,6 +84,8 @@ namespace sph
     // data helpers
         SphKernel m_kernel;  // smooth kernel helper
         SphGrid m_grid;      // spatial grid helper
+
+        SceneGpu* m_sceneGpu;
 
     // simulation settings
         float m_dt;          // simulation timestep
@@ -110,7 +115,7 @@ namespace sph
         Vec2f* m_sumDijPj = nullptr;   // intermediate computation coefficient
         Vec2f* m_Vadv = nullptr;       // velocity without pressure forces
         float* m_Dadv = nullptr;       // density without pressure forces
-        float* m_Pl = nullptr;         // corrected pressure at last iteration
+        float* m_Pl = nullptr;         // corrected pressure at previous iteration
         float* m_Dcorr = nullptr;      // corrected density
         Vec2f* m_Fadv = nullptr;       // non-pressure forces
         Vec2f* m_Fp = nullptr;         // pressure forces

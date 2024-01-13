@@ -11,6 +11,9 @@ namespace sph
     public:
         SphKernel(float _h = 1, u32 _dim = 2);
 
+        float GetCoeff() const { return m_coeff[m_dim - 1]; }
+        float GetDerivCoeff() const { return m_derivCoeff[m_dim - 1]; }
+
         template<typename VecType>
         float W(const VecType& _rij) const 
         {

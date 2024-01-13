@@ -53,6 +53,7 @@ namespace sph
 
     void SphGrid::GatherNeighborCells(std::vector<u32>& _cellIndices, const Vec2f& _particle, float _radius) const
     {
+        AVA_ASSERT(Contains(_particle), "Particle outisde the grid");
         _cellIndices.clear();
 
         const Vec2i minCell = CellPosition(_particle - _radius);
@@ -76,5 +77,10 @@ namespace sph
                 count++;
             }
         }
+    }
+
+    Vec2f SphGrid::ClampPosition(const Vec2f& _particle) const
+    {
+        return Math::clamp(_particle, Vec2f(FLT_EPSILON), m_gridSize - m_cellSize - FLT_EPSILON);
     }
 }

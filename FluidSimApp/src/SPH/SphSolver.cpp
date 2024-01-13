@@ -3,7 +3,11 @@
 // CPU multi-threading
 #include "omp.h"
 
-// CPU profiling
+// GPU multi-threading
+#include "SphSolverGPU.cuh"
+
+// Ava
+#include <Debug/Log.h>
 #include <Time/Profiler.h>
 
 namespace sph
@@ -22,11 +26,28 @@ namespace sph
         m_grid = SphGrid(m_h * 2.f, _settings.dimensions);
 
         _Allocate(_settings.nbFluidParticles, _settings.nbBoundaryParticles);
+
+        m_sceneGpu = new SceneGpu();
+        m_sceneGpu->m_rho0 = m_rho0;
+        m_sceneGpu->m_nu = m_nu;
+        m_sceneGpu->m_eta = m_eta;
+        m_sceneGpu->m_omega = m_omega;
+        m_sceneGpu->m_gY = m_g.y;
+        m_sceneGpu->m_h = m_h;
+        m_sceneGpu->m_m0 = m_m0;
+        m_sceneGpu->m_kernel.m_h = m_h;
+        m_sceneGpu->m_kernel.m_coeff = m_kernel.GetCoeff();
+        m_sceneGpu->m_kernel.m_derivCoeff = m_kernel.GetDerivCoeff();
+
+        m_sceneGpu->Allocate(_settings.nbFluidParticles, _settings.nbBoundaryParticles);
     }
 
     SphSolver::~SphSolver()
     {
         _Deallocate();
+
+        m_sceneGpu->Deallocate();
+        delete m_sceneGpu;
     }
 
     void SphSolver::Prepare()
@@ -45,18 +66,40 @@ namespace sph
         {
             _ComputeDensity(i);
         }
+
+        m_sceneGpu->UploadFluidState(m_fPosition, m_fVelocity, m_fDensity);
+        m_sceneGpu->UploadBoundaryState(m_bPosition, m_Psi);
     }
 
-    void SphSolver::Simulate(float _dt)
+    void SphSolver::Simulate(float _dt, bool _onGpu)
     {
-        AUTO_CPU_MARKER("Solver::Advance");
-        m_dt = _dt;
+        AUTO_CPU_MARKER("Simulate");
 
         _BuildParticleGrid();
         _SearchNeighbors();
-        _PredictAdvection();
-        _SolvePressure();
-        _CorrectIntegration();
+
+        if (_onGpu)
+        {
+            AUTO_CPU_MARKER("GPU");
+        
+            m_sceneGpu->m_dt = _dt;
+            m_sceneGpu->UploadNeighbors(m_fNeighborsFlat, m_bNeighborsFlat);
+
+            m_sceneGpu->PredictAdvection();
+            m_sceneGpu->SolvePressure();
+            m_sceneGpu->Integrate();
+
+            m_sceneGpu->RetrieveFluidState(m_fPosition, m_fVelocity, m_fDensity);
+        }
+        else
+        {
+            AUTO_CPU_MARKER("CPU");
+            m_dt = _dt;
+
+            _PredictAdvection();
+            _SolvePressure();
+            _Integrate();
+        }
     }
 
 
@@ -139,11 +182,9 @@ namespace sph
         m_fluidCount = _fCount;
         m_boundaryCount = _bCount;
 
+        // fluid state
         m_fPosition = newArr1<Vec2f>(m_fluidCount);
         memset(m_fPosition, 0, sizeof(Vec2f) * m_fluidCount);
-
-        m_fDensity = newArr1<float>(m_fluidCount);
-        memset(m_fDensity, 0, sizeof(float) * m_fluidCount);
 
         m_fVelocity = newArr1<Vec2f>(m_fluidCount);
         memset(m_fVelocity, 0, sizeof(Vec2f) * m_fluidCount);
@@ -151,12 +192,17 @@ namespace sph
         m_fPressure = newArr1<float>(m_fluidCount);
         memset(m_fPressure, 0, sizeof(float) * m_fluidCount);
 
+        m_fDensity = newArr1<float>(m_fluidCount);
+        memset(m_fDensity, 0, sizeof(float) * m_fluidCount);
+
+        // boundary state
         m_bPosition = newArr1<Vec2f>(m_boundaryCount);
         memset(m_bPosition, 0, sizeof(Vec2f) * m_boundaryCount);
 
         m_Psi = newArr1<float>(m_boundaryCount);
         memset(m_Psi, 0, sizeof(float) * m_boundaryCount);
 
+        // internal data
         m_Dii = newArr1<Vec2f>(m_fluidCount);
         memset(m_Dii, 0, sizeof(Vec2f) * m_fluidCount);
 
@@ -184,6 +230,7 @@ namespace sph
         m_Fp = newArr1<Vec2f>(m_fluidCount);
         memset(m_Fp, 0, sizeof(Vec2f) * m_fluidCount);
 
+        // neighboring structures
         m_fluidInGrid = newArr2<u32>(&m_fluidInGridFlat, m_grid.CellCount(), kMaxFluidInCell + 1);
         std::fill_n(m_fluidInGridFlat, m_grid.CellCount() * (kMaxFluidInCell + 1), kInvalidIdx);
 
@@ -200,9 +247,9 @@ namespace sph
     void SphSolver::_Deallocate()
     {
         delArray1(m_fPosition);
-        delArray1(m_fDensity);
         delArray1(m_fVelocity);
         delArray1(m_fPressure);
+        delArray1(m_fDensity);
 
         delArray1(m_bPosition);
         delArray1(m_Psi);
@@ -233,7 +280,7 @@ namespace sph
 
     void SphSolver::_BuildParticleGrid()
     {
-        AUTO_CPU_MARKER("Solver::BuildParticleGrid");
+        AUTO_CPU_MARKER("Build Particle Grid");
 
         // reset particles in grid
         std::fill_n(m_fluidInGridFlat, m_grid.CellCount() * (kMaxFluidInCell + 1), kInvalidIdx);
@@ -246,19 +293,14 @@ namespace sph
 
             if (m_grid.Contains(cellIdx))
             {
-                bool found = false;
-
                 for (int idx = 0; idx < kMaxFluidInCell; idx++)
                 {
                     if (m_fluidInGrid[cellIdx][idx] == kInvalidIdx)
                     {
                         m_fluidInGrid[cellIdx][idx] = i;
-                        found = true;
                         break;
                     }
                 }
-
-                AVA_ASSERT(found);
             }
         }
 
@@ -269,26 +311,21 @@ namespace sph
 
             if (m_grid.Contains(cellIdx))
             {
-                bool found = false;
-
                 for (int idx = 0; idx < kMaxBoundaryInCell; idx++)
                 {
                     if (m_boundaryInGrid[cellIdx][idx] == kInvalidIdx)
                     {
                         m_boundaryInGrid[cellIdx][idx] = i;
-                        found = true;
                         break;
                     }
                 }
-
-                AVA_ASSERT(found);
             }
         }
     }
 
     void SphSolver::_SearchNeighbors()
     {
-        AUTO_CPU_MARKER("Solver::SearchNeighbors");
+        AUTO_CPU_MARKER("Search Neighbors");
 
         const float searchRadius = 2.f * m_h;
         const float squaredRadius = Math::square(searchRadius);
@@ -341,7 +378,7 @@ namespace sph
 
     void SphSolver::_PredictAdvection()
     {
-        AUTO_CPU_MARKER("Solver::PredictAdvection");
+        AUTO_CPU_MARKER("Predict Advection");
 
     #pragma omp parallel for
         for (int i = 0; i < m_fluidCount; i++)
@@ -368,12 +405,12 @@ namespace sph
 
     void SphSolver::_SolvePressure()
     {
-        AUTO_CPU_MARKER("Solver::SolvePressure");
+        AUTO_CPU_MARKER("Pressure Solve");
 
         int iteration = 0;
-        float error = 1.f;
+        // float error = 1.f;
 
-        while (error > m_eta && iteration < kMaxPressureSolveIteration)
+        while (iteration < kMaxPressureSolveIteration)
         {
     #pragma omp parallel for
             for (int i = 0; i < m_fluidCount; i++)
@@ -387,14 +424,20 @@ namespace sph
                 _ComputePressure(i);
             }
 
-            error = abs(AverageFluidDensity() - m_rho0);
+    #pragma omp parallel for
+            for (int i = 0; i < m_fluidCount; i++)
+            {
+                _SavePressure(i);
+            }
+
+            // error = abs(AverageFluidDensity() - m_rho0);
             iteration++;
         }
     }
 
-    void SphSolver::_CorrectIntegration()
+    void SphSolver::_Integrate()
     {
-        AUTO_CPU_MARKER("Solver::CorrectIntegration");
+        AUTO_CPU_MARKER("Integration");
 
     #pragma omp parallel for
         for (int i = 0; i < m_fluidCount; i++)
@@ -457,43 +500,43 @@ namespace sph
     void SphSolver::_ComputeDensity(u32 i) const
     {
         m_fDensity[i] = 0.f;
-        Vec2f pos_ij;
 
         for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
         {
             const u32 j = m_fNeighbors[i][idx];
-            pos_ij = m_fPosition[i] - m_fPosition[j];
+            const Vec2f pos_ij = m_fPosition[i] - m_fPosition[j];
             m_fDensity[i] += m_m0 * m_kernel.W(pos_ij);
         }
 
         for (int idx = 0; m_bNeighbors[i][idx] != kInvalidIdx; idx++)
         {
             const u32 j = m_bNeighbors[i][idx];
-            pos_ij = m_fPosition[i] - m_bPosition[j];
+            const Vec2f pos_ij = m_fPosition[i] - m_bPosition[j];
             m_fDensity[i] += m_Psi[j] * m_kernel.W(pos_ij);
         }
     }
 
     void SphSolver::_ComputeAdvectionForces(u32 i) const
     {
-        m_Fadv[i] = Vec2f(0.f, 0.f);
+        m_Fadv[i] = { 0.f, 0.f };
 
         // add body force
         m_Fadv[i] += m_m0 * m_g;
 
         // add viscous force
-        Vec2f pos_ij;
-        Vec2f vel_ij;
-
         for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
         {
             const u32 j = m_fNeighbors[i][idx];
 
             if (m_fPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_fPosition[j];
-                vel_ij = m_fVelocity[i] - m_fVelocity[j];
-                m_Fadv[i] += 2.f * m_nu * (Math::square(m_m0) / m_fDensity[j]) * dot(vel_ij, pos_ij) * m_kernel.GradW(pos_ij) / (Math::normSquared(pos_ij) + 0.01f * Math::square(m_h));
+                const Vec2f pos_ij = m_fPosition[i] - m_fPosition[j];
+                const Vec2f vel_ij = m_fVelocity[i] - m_fVelocity[j];
+
+                const Vec2f gradW = m_kernel.GradW(pos_ij);
+                const float coeff = 2.f * m_nu * (Math::square(m_m0) / m_fDensity[j]) * dot(vel_ij, pos_ij) / (Math::normSquared(pos_ij) + 0.01f * Math::square(m_h));
+
+                m_Fadv[i] += coeff * gradW;
             }
         }
     }
@@ -505,8 +548,7 @@ namespace sph
 
     void SphSolver::_StoreDii(u32 i) const
     {
-        m_Dii[i] = Vec2f(0.f, 0.f);
-        Vec2f pos_ij;
+        m_Dii[i] = { 0.f, 0.f };
 
         for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
         {
@@ -514,7 +556,7 @@ namespace sph
 
             if (m_fPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_fPosition[j];
+                const Vec2f pos_ij = m_fPosition[i] - m_fPosition[j];
                 m_Dii[i] += (-m_m0 / Math::square(m_fDensity[i])) * m_kernel.GradW(pos_ij);
             }
         }
@@ -525,7 +567,7 @@ namespace sph
 
             if (m_bPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_bPosition[j];
+                const Vec2f pos_ij = m_fPosition[i] - m_bPosition[j];
                 m_Dii[i] += (-m_Psi[j] / Math::square(m_fDensity[i])) * m_kernel.GradW(pos_ij);
             }
         }
@@ -536,8 +578,6 @@ namespace sph
     void SphSolver::_PredictDensity(u32 i) const
     {
         m_Dadv[i] = 0.f;
-        Vec2f pos_ij;
-        Vec2f vel_adv_ij;
 
         for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
         {
@@ -545,8 +585,8 @@ namespace sph
 
             if (m_fPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_fPosition[j];
-                vel_adv_ij = m_Vadv[i] - m_Vadv[j];
+                const Vec2f pos_ij = m_fPosition[i] - m_fPosition[j];
+                const Vec2f vel_adv_ij = m_Vadv[i] - m_Vadv[j];
                 m_Dadv[i] += m_m0 * dot(vel_adv_ij, m_kernel.GradW(pos_ij));
             }
         }
@@ -557,9 +597,8 @@ namespace sph
 
             if (m_bPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_bPosition[j];
-                vel_adv_ij = m_Vadv[i];
-                m_Dadv[i] += m_Psi[j] * dot(vel_adv_ij, m_kernel.GradW(pos_ij));
+                const Vec2f pos_ij = m_fPosition[i] - m_bPosition[j];
+                m_Dadv[i] += m_Psi[j] * dot(m_Vadv[i], m_kernel.GradW(pos_ij));
             }
         }
 
@@ -575,8 +614,6 @@ namespace sph
     void SphSolver::_StoreAii(u32 i) const
     {
         m_Aii[i] = 0.f;
-        Vec2f pos_ij;
-        Vec2f d_ji;
 
         for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
         {
@@ -584,9 +621,9 @@ namespace sph
 
             if (m_fPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_fPosition[j];
-                d_ji = -(Math::square(m_dt) * m_m0 / Math::square(m_fDensity[i])) * (-m_kernel.GradW(pos_ij));
-                m_Aii[i] += m_m0 * dot(m_Dii[i] - d_ji, m_kernel.GradW(pos_ij));
+                const Vec2f pos_ij = m_fPosition[i] - m_fPosition[j];
+                const Vec2f D_ji = -(Math::square(m_dt) * m_m0 / Math::square(m_fDensity[i])) * (-m_kernel.GradW(pos_ij));
+                m_Aii[i] += m_m0 * dot(m_Dii[i] - D_ji, m_kernel.GradW(pos_ij));
             }
         }
 
@@ -596,7 +633,7 @@ namespace sph
 
             if (m_bPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_bPosition[j];
+                const Vec2f pos_ij = m_fPosition[i] - m_bPosition[j];
                 m_Aii[i] += m_Psi[j] * dot(m_Dii[i], m_kernel.GradW(pos_ij));
             }
         }
@@ -608,8 +645,7 @@ namespace sph
 
     void SphSolver::_StoreSumDijPj(u32 i) const
     {
-        m_sumDijPj[i] = Vec2f(0.f, 0.f);
-        Vec2f pos_ij;
+        m_sumDijPj[i] = { 0.f, 0.f };
 
         for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
         {
@@ -617,8 +653,10 @@ namespace sph
 
             if (m_fPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_fPosition[j];
-                m_sumDijPj[i] += -(m_m0 * m_fPressure[j] / Math::square(m_fDensity[j])) * m_kernel.GradW(pos_ij);
+                const Vec2f pos_ij = m_fPosition[i] - m_fPosition[j];
+                const Vec2f gradW = m_kernel.GradW(pos_ij);
+                const float coeff = -m_m0 * m_Pl[j] / Math::square(m_fDensity[j]);
+                m_sumDijPj[i] += coeff * gradW;
             }
         }
 
@@ -628,9 +666,6 @@ namespace sph
     void SphSolver::_ComputePressure(u32 i) const
     {
         m_Dcorr[i] = 0.f;
-        Vec2f pos_ij;
-        Vec2f d_ji;
-        Vec2f temp;
 
         for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
         {
@@ -638,10 +673,15 @@ namespace sph
 
             if (m_fPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_fPosition[j];
-                d_ji = -(Math::square(m_dt) * m_m0 / Math::square(m_fDensity[i])) * (-m_kernel.GradW(pos_ij));
-                temp = m_sumDijPj[i] - m_Dii[j] * m_Pl[j] - (m_sumDijPj[j] - d_ji * m_Pl[i]);
-                m_Dcorr[i] += m_m0 * dot(temp, m_kernel.GradW(pos_ij));
+                const Vec2f pos_ij = m_fPosition[i] - m_fPosition[j];
+
+                const Vec2f gradW = m_kernel.GradW(pos_ij);
+                const float coeff = -Math::square(m_dt) * m_m0 / Math::square(m_fDensity[i]);
+
+                const Vec2f D_ji = coeff * (-gradW);
+                const Vec2f temp = m_sumDijPj[i] - m_Dii[j] * m_Pl[j] - (m_sumDijPj[j] - D_ji * m_Pl[i]);
+
+                m_Dcorr[i] += m_m0 * dot(temp, gradW);
             }
         }
 
@@ -651,27 +691,29 @@ namespace sph
 
             if (m_bPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_bPosition[j];
+                const Vec2f pos_ij = m_fPosition[i] - m_bPosition[j];
                 m_Dcorr[i] += m_Psi[j] * dot(m_sumDijPj[i], m_kernel.GradW(pos_ij));
             }
         }
 
         m_Dcorr[i] += m_Dadv[i];
-        float previousPl = m_Pl[i];
 
-        if (abs(m_Aii[i]) > FLT_MIN)
+        if (fabs(m_Aii[i]) > FLT_EPSILON)
         {
-            m_Pl[i] = (1 - m_omega) * previousPl + (m_omega / m_Aii[i]) * (m_rho0 - m_Dcorr[i]);
+            m_fPressure[i] = fmax(0.f, (1 - m_omega) * m_Pl[i] + (m_omega / m_Aii[i]) * (m_rho0 - m_Dcorr[i]));
         }
         else
         {
-            m_Pl[i] = 0.f;
+            m_fPressure[i] = 0.f;
         }
+    }
 
-        m_fPressure[i] = fmax(m_Pl[i], 0.f);
+    void SphSolver::_SavePressure(u32 i) const
+    {
+        m_Dcorr[i] += m_Aii[i] * m_Pl[i];
 
+        // save pressure for next iteration
         m_Pl[i] = m_fPressure[i];
-        m_Dcorr[i] += m_Aii[i] * previousPl;
     }
 
 
@@ -680,8 +722,7 @@ namespace sph
 
     void SphSolver::_ComputePressureForces(u32 i) const
     {
-        m_Fp[i] = Vec2f(0.f, 0.f);
-        Vec2f pos_ij;
+        m_Fp[i] = { 0.f, 0.f };
 
         for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
         {
@@ -689,7 +730,7 @@ namespace sph
 
             if (m_fPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_fPosition[j];
+                const Vec2f pos_ij = m_fPosition[i] - m_fPosition[j];
                 m_Fp[i] += -Math::square(m_m0) * (m_fPressure[i] / Math::square(m_fDensity[i]) + m_fPressure[j] / Math::square(m_fDensity[j])) * m_kernel.GradW(pos_ij);
             }
         }
@@ -700,7 +741,7 @@ namespace sph
 
             if (m_bPosition[j] != m_fPosition[i])
             {
-                pos_ij = m_fPosition[i] - m_bPosition[j];
+                const Vec2f pos_ij = m_fPosition[i] - m_bPosition[j];
                 m_Fp[i] += -m_m0 * m_Psi[j] * (m_fPressure[i] / Math::square(m_fDensity[i])) * m_kernel.GradW(pos_ij);
             }
         }

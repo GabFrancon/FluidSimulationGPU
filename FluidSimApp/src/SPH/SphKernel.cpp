@@ -22,12 +22,12 @@ namespace sph
 
         if (q <= 1.f)
         {
-            return m_coeff[m_dim - 1] * (1.f - 1.5f * Math::square(q) + 0.75f * Math::cube(q));
+            return GetCoeff() * (1.f - 1.5f * Math::square(q) + 0.75f * Math::cube(q));
         }
 
         if (q <= 2.f)
         {
-            return m_coeff[m_dim - 1] * (0.25f * Math::cube(2.f - q));
+            return GetCoeff() * 0.25f * Math::cube(2.f - q);
         }
 
         return 0.f;
@@ -39,12 +39,12 @@ namespace sph
 
         if (q <= 1.f) 
         {
-            return m_derivCoeff[m_dim - 1] * (-3.f * q + 2.25f * Math::square(q));
+            return GetDerivCoeff() * (-3.f * q + 2.25f * Math::square(q));
         }
 
         if (q <= 2.f) 
         {
-            return -m_derivCoeff[m_dim - 1] * 0.75f * Math::square(2.f - q);
+            return -GetDerivCoeff() * 0.75f * Math::square(2.f - q);
         }
 
         return 0.f;

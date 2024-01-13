@@ -158,6 +158,6 @@ namespace sph
     constexpr int kMaxBoundaryInCell = 4;
     constexpr int kMaxFluidNeighbors = 20;
     constexpr int kMaxBoundaryNeighbors = 10;
-    constexpr int kMaxPressureSolveIteration = 4;
+    constexpr int kMaxPressureSolveIteration = 2;
     constexpr u32 kInvalidIdx = 0xFFFFFFFF;
 }
