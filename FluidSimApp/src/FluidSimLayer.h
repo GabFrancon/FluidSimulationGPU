@@ -25,10 +25,11 @@ public:
 
 private:
     // scene
-    const float kSpacing = 0.0625f;
+    const float kSpacing = 0.125f;
     const float kRestDensity = 1e3f;
-    const Ava::Vec2f kFluidVolume = {  6.f, 12.f };
-    const Ava::Vec2f kBoundVolume = { 25.f, 14.f };
+    const int kBoundaryThickness = 2;
+    const Ava::Vec2f kFluidVolume = {  7.f, 10.f };
+    const Ava::Vec2f kBoundVolume = { 25.f, 20.f };
     const Ava::Color kClearColor = {  10 / 255.0f,  10 / 255.0f,  10 / 255.0f };
     const Ava::Color kFluidColor = {   0 / 255.0f,  37 / 255.0f, 147 / 255.0f };
     const Ava::Color kBoundColor = { 195 / 255.0f,  50 / 255.0f,  30 / 255.0f };

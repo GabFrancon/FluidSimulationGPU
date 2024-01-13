@@ -154,10 +154,12 @@ namespace sph
     template < class type > inline void delArray4(type **** arr)
     { delArray3(arr[0]); delete[](arr); }
 
-    constexpr int kMaxFluidInCell = 10;
-    constexpr int kMaxBoundaryInCell = 4;
+    constexpr int kMaxFluidPerCell = 10;
+    constexpr int kMaxBoundaryPerCell = 4;
+
+    constexpr int kMaxNeighborCells = 9;
     constexpr int kMaxFluidNeighbors = 20;
     constexpr int kMaxBoundaryNeighbors = 10;
-    constexpr int kMaxPressureSolveIteration = 2;
-    constexpr u32 kInvalidIdx = 0xFFFFFFFF;
+
+    constexpr int kMaxPressureSolveIteration = 4;
 }

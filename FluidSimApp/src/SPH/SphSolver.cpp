@@ -35,7 +35,14 @@ namespace sph
         m_sceneGpu->m_gY = m_g.y;
         m_sceneGpu->m_h = m_h;
         m_sceneGpu->m_m0 = m_m0;
-        m_sceneGpu->m_kernel.m_h = m_h;
+
+        m_sceneGpu->m_grid.m_cellSize = m_grid.CellSize();
+        m_sceneGpu->m_grid.m_gridCells.x = m_grid.GridCells().x;
+        m_sceneGpu->m_grid.m_gridCells.y = m_grid.GridCells().y;
+        m_sceneGpu->m_grid.m_gridSize.x = m_grid.GridSize().x;
+        m_sceneGpu->m_grid.m_gridSize.y = m_grid.GridSize().y;
+
+        m_sceneGpu->m_kernel.m_h = m_kernel.GetRadius();
         m_sceneGpu->m_kernel.m_coeff = m_kernel.GetCoeff();
         m_sceneGpu->m_kernel.m_derivCoeff = m_kernel.GetDerivCoeff();
 
@@ -73,33 +80,49 @@ namespace sph
 
     void SphSolver::Simulate(float _dt, bool _onGpu)
     {
-        AUTO_CPU_MARKER("Simulate");
-
-        _BuildParticleGrid();
-        _SearchNeighbors();
+        AUTO_CPU_MARKER("Simulation Step");
 
         if (_onGpu)
         {
-            AUTO_CPU_MARKER("GPU");
-        
             m_sceneGpu->m_dt = _dt;
-            m_sceneGpu->UploadNeighbors(m_fNeighborsFlat, m_bNeighborsFlat);
 
+            m_sceneGpu->BuildParticleGrid();
+            m_sceneGpu->SearchNeighbors();
             m_sceneGpu->PredictAdvection();
             m_sceneGpu->SolvePressure();
             m_sceneGpu->Integrate();
 
-            m_sceneGpu->RetrieveFluidState(m_fPosition, m_fVelocity, m_fDensity);
+            m_sceneGpu->FetchFluidState(m_fPosition, m_fVelocity, m_fDensity);
         }
         else
         {
-            AUTO_CPU_MARKER("CPU");
             m_dt = _dt;
 
+            _BuildParticleGrid();
+            _SearchNeighbors();
             _PredictAdvection();
             _SolvePressure();
             _Integrate();
         }
+
+        // static int iteration = 0;
+        // static float time = 0.f;
+        //
+        // iteration++;
+        // time += _dt;
+        //
+        // if (iteration % 100 == 0)
+        // {
+        //     float avgDistance = 0.f;
+        //     for (int i = 0; i < m_fluidCount; i++)
+        //     {
+        //         avgDistance += Math::distance(m_fPositionGpu[i], m_fPosition[i]);
+        //     }
+        //
+        //     avgDistance *= m_h;
+        //     avgDistance /= m_fluidCount;
+        //     AVA_TRACE("Iteration %d, time %.3f -> avgDistance = %.3f", iteration, time, avgDistance);
+        // }
     }
 
 
@@ -147,11 +170,16 @@ namespace sph
 
         for (int i = 0; i < m_fluidCount; i++)
         {
-            avgDensity += m_Dcorr[i];
+            avgDensity += m_fDensity[i];
         }
 
         avgDensity /= m_fluidCount;
         return avgDensity;
+    }
+
+    float SphSolver::GetParticleSpacing() const
+    {
+        return m_h;
     }
 
 
@@ -185,6 +213,9 @@ namespace sph
         // fluid state
         m_fPosition = newArr1<Vec2f>(m_fluidCount);
         memset(m_fPosition, 0, sizeof(Vec2f) * m_fluidCount);
+
+        m_fPositionGpu = newArr1<Vec2f>(m_fluidCount);
+        memset(m_fPositionGpu, 0, sizeof(Vec2f) * m_fluidCount);
 
         m_fVelocity = newArr1<Vec2f>(m_fluidCount);
         memset(m_fVelocity, 0, sizeof(Vec2f) * m_fluidCount);
@@ -230,23 +261,39 @@ namespace sph
         m_Fp = newArr1<Vec2f>(m_fluidCount);
         memset(m_Fp, 0, sizeof(Vec2f) * m_fluidCount);
 
-        // neighboring structures
-        m_fluidInGrid = newArr2<u32>(&m_fluidInGridFlat, m_grid.CellCount(), kMaxFluidInCell + 1);
-        std::fill_n(m_fluidInGridFlat, m_grid.CellCount() * (kMaxFluidInCell + 1), kInvalidIdx);
+        // fluid grid
+        m_fluidPerCell = newArr2<u32>(&m_fluidPerCellFlat, m_grid.CellCount(), kMaxFluidPerCell);
+        memset(m_fluidPerCellFlat, 0, sizeof(u32) * m_grid.CellCount() * kMaxFluidPerCell);
 
-        m_fNeighbors = newArr2<u32>(&m_fNeighborsFlat, m_fluidCount, kMaxFluidNeighbors + 1);
-        std::fill_n(m_fNeighborsFlat, m_fluidCount * (kMaxFluidNeighbors + 1), kInvalidIdx);
+        m_nbFluidPerCell = newArr1<int>(m_grid.CellCount());
+        memset(m_nbFluidPerCell, 0, sizeof(int) * m_grid.CellCount());
 
-        m_boundaryInGrid = newArr2<u32>(&m_boundaryInGridFlat, m_grid.CellCount(), kMaxBoundaryInCell + 1);
-        std::fill_n(m_boundaryInGridFlat, m_grid.CellCount() * (kMaxBoundaryInCell + 1), kInvalidIdx);
+        // boundary grid
+        m_boundaryPerCell = newArr2<u32>(&m_boundaryPerCellFlat, m_grid.CellCount(), kMaxBoundaryPerCell);
+        memset(m_boundaryPerCellFlat, 0, sizeof(u32) * m_grid.CellCount() * kMaxBoundaryPerCell);
 
-        m_bNeighbors = newArr2<u32>(&m_bNeighborsFlat, m_fluidCount, kMaxBoundaryNeighbors + 1);
-        std::fill_n(m_bNeighborsFlat, m_fluidCount * (kMaxBoundaryNeighbors + 1), kInvalidIdx);
+        m_nbBoundaryPerCell = newArr1<int>(m_grid.CellCount());
+        memset(m_nbBoundaryPerCell, 0, sizeof(int) * m_grid.CellCount());
+
+        // fluid neighbors
+        m_fNeighbors = newArr2<u32>(&m_fNeighborsFlat, m_fluidCount, kMaxFluidNeighbors);
+        memset(m_fNeighborsFlat, 0, sizeof(u32) * m_fluidCount * kMaxFluidNeighbors);
+
+        m_fNeighborsCount = newArr1<int>(m_fluidCount);
+        memset(m_fNeighborsCount, 0, sizeof(int) * m_fluidCount);
+
+        // boundary neighbors
+        m_bNeighbors = newArr2<u32>(&m_bNeighborsFlat, m_fluidCount, kMaxBoundaryNeighbors);
+        memset(m_bNeighborsFlat,0, sizeof(u32) * m_fluidCount * kMaxBoundaryNeighbors);
+
+        m_bNeighborsCount = newArr1<int>(m_fluidCount);
+        memset(m_bNeighborsCount, 0, sizeof(int) * m_fluidCount);
     }
 
     void SphSolver::_Deallocate()
     {
         delArray1(m_fPosition);
+        delArray1(m_fPositionGpu);
         delArray1(m_fVelocity);
         delArray1(m_fPressure);
         delArray1(m_fDensity);
@@ -264,11 +311,17 @@ namespace sph
         delArray1(m_Fadv);
         delArray1(m_Fp);
 
-        delArray2(m_fluidInGrid);
-        delArray2(m_fNeighbors);
+        delArray2(m_fluidPerCell);
+        delArray1(m_nbFluidPerCell);
 
-        delArray2(m_boundaryInGrid);
+        delArray2(m_boundaryPerCell);
+        delArray1(m_nbBoundaryPerCell);
+
+        delArray2(m_fNeighbors);
+        delArray1(m_fNeighborsCount);
+
         delArray2(m_bNeighbors);
+        delArray1(m_bNeighborsCount);
 
         m_fluidCount = 0;
         m_boundaryCount = 0;
@@ -283,8 +336,8 @@ namespace sph
         AUTO_CPU_MARKER("Build Particle Grid");
 
         // reset particles in grid
-        std::fill_n(m_fluidInGridFlat, m_grid.CellCount() * (kMaxFluidInCell + 1), kInvalidIdx);
-        std::fill_n(m_boundaryInGridFlat, m_grid.CellCount() * (kMaxBoundaryInCell + 1), kInvalidIdx);
+        memset(m_nbFluidPerCell, 0, sizeof(int) * m_grid.CellCount());
+        memset(m_nbBoundaryPerCell, 0, sizeof(int) * m_grid.CellCount());
 
         // identify grid cells occupied by fluid particles
         for (int i = 0; i < m_fluidCount; i++)
@@ -293,14 +346,9 @@ namespace sph
 
             if (m_grid.Contains(cellIdx))
             {
-                for (int idx = 0; idx < kMaxFluidInCell; idx++)
-                {
-                    if (m_fluidInGrid[cellIdx][idx] == kInvalidIdx)
-                    {
-                        m_fluidInGrid[cellIdx][idx] = i;
-                        break;
-                    }
-                }
+                int& nbFluidInCell = m_nbFluidPerCell[cellIdx];
+                m_fluidPerCell[cellIdx][nbFluidInCell] = i;
+                nbFluidInCell++;
             }
         }
 
@@ -311,14 +359,9 @@ namespace sph
 
             if (m_grid.Contains(cellIdx))
             {
-                for (int idx = 0; idx < kMaxBoundaryInCell; idx++)
-                {
-                    if (m_boundaryInGrid[cellIdx][idx] == kInvalidIdx)
-                    {
-                        m_boundaryInGrid[cellIdx][idx] = i;
-                        break;
-                    }
-                }
+                int& nbBoundaryInCell = m_nbBoundaryPerCell[cellIdx];
+                m_boundaryPerCell[cellIdx][nbBoundaryInCell] = i;
+                nbBoundaryInCell++;
             }
         }
     }
@@ -330,30 +373,25 @@ namespace sph
         const float searchRadius = 2.f * m_h;
         const float squaredRadius = Math::square(searchRadius);
 
-        // reset neighbors
-        std::fill_n(m_fNeighborsFlat, m_fluidCount * (kMaxFluidNeighbors + 1), kInvalidIdx);
-        std::fill_n(m_bNeighborsFlat, m_fluidCount * (kMaxBoundaryNeighbors + 1), kInvalidIdx);
-
     #pragma omp parallel for
         for (int i = 0; i < m_fluidCount; i++)
         {
             // gather neighboring cells
             std::vector<u32> neighborCells;
-            const Vec2f& position = m_fPosition[i];
-            m_grid.GatherNeighborCells(neighborCells, position, searchRadius);
+            m_grid.GatherNeighborCells(neighborCells, m_fPosition[i], searchRadius);
 
             int fCurrentNeighbor = 0;
             int bCurrentNeighbor = 0;
 
-            for (const u32 cellIdx : neighborCells)
+            for (const u32 cellID : neighborCells)
             {
                 // search for neighboring fluid particles
-                for (int idx = 0; m_fluidInGrid[cellIdx][idx] != kInvalidIdx; idx++)
+                for (int idx = 0; idx < m_nbFluidPerCell[cellID]; idx++)
                 {
-                    const u32 j = m_fluidInGrid[cellIdx][idx];
-                    const float d2 = Math::normSquared(m_fPosition[j] - position);
+                    const u32 j = m_fluidPerCell[cellID][idx];
+                    const Vec2f pos_ij = m_fPosition[i] - m_fPosition[j];
 
-                    if (d2 < squaredRadius)
+                    if (Math::normSquared(pos_ij) < squaredRadius)
                     {
                         m_fNeighbors[i][fCurrentNeighbor] = j;
                         fCurrentNeighbor++;
@@ -361,18 +399,22 @@ namespace sph
                 }
 
                 // search for neighboring boundary particles
-                for (int idx = 0; m_boundaryInGrid[cellIdx][idx] != kInvalidIdx; idx++)
+                for (int idx = 0; idx < m_nbBoundaryPerCell[cellID]; idx++)
                 {
-                    const u32 j = m_boundaryInGrid[cellIdx][idx];
-                    const float d2 = Math::normSquared(m_bPosition[j] - position);
+                    const u32 j = m_boundaryPerCell[cellID][idx];
+                    const Vec2f pos_ij = m_fPosition[i] - m_bPosition[j];
 
-                    if (d2 < squaredRadius)
+                    if (Math::normSquared(pos_ij) < squaredRadius)
                     {
                         m_bNeighbors[i][bCurrentNeighbor] = j;
                         bCurrentNeighbor++;
                     }
                 }
             }
+
+            // update neighbors count
+            m_fNeighborsCount[i] = fCurrentNeighbor;
+            m_bNeighborsCount[i]  = bCurrentNeighbor;
         }
     }
 
@@ -408,7 +450,6 @@ namespace sph
         AUTO_CPU_MARKER("Pressure Solve");
 
         int iteration = 0;
-        // float error = 1.f;
 
         while (iteration < kMaxPressureSolveIteration)
         {
@@ -430,7 +471,6 @@ namespace sph
                 _SavePressure(i);
             }
 
-            // error = abs(AverageFluidDensity() - m_rho0);
             iteration++;
         }
     }
@@ -466,32 +506,22 @@ namespace sph
         std::vector<u32> neighborCells;
         m_grid.GatherNeighborCells(neighborCells, m_bPosition[i], searchRadius);
 
-        // search for neighboring boundary particles
-        std::vector<u32> neighbors;
+        // compute boundary density number "Psi"
+        float sumK = 0.f;
 
         for (const u32 cellIdx : neighborCells)
         {
             // search for neighboring boundary particles
-            for (int idx = 0; m_boundaryInGrid[cellIdx][idx] != kInvalidIdx; idx++)
+            for (int idx = 0; idx < m_nbBoundaryPerCell[cellIdx]; idx++)
             {
-                const u32 j = m_boundaryInGrid[cellIdx][idx];
-                const float d2 = Math::normSquared(m_bPosition[j] - m_bPosition[i]);
+                const u32 j = m_boundaryPerCell[cellIdx][idx];
+                const Vec2f pos_ij = m_bPosition[i] - m_bPosition[j];
 
-                if (d2 < squaredRadius)
+                if (Math::normSquared(pos_ij) < squaredRadius)
                 {
-                    neighbors.push_back(j);
+                    sumK += m_kernel.W(pos_ij);
                 }
             }
-        }
-
-        // compute density number "Psi"
-        float sumK = 0.f;
-        Vec2f pos_ij;
-        
-        for (const u32 j : neighbors)
-        {
-            pos_ij = m_bPosition[i] - m_bPosition[j];
-            sumK += m_kernel.W(pos_ij);
         }
 
         m_Psi[i] = m_rho0 / sumK;
@@ -501,14 +531,14 @@ namespace sph
     {
         m_fDensity[i] = 0.f;
 
-        for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_fNeighborsCount[i]; idx++)
         {
             const u32 j = m_fNeighbors[i][idx];
             const Vec2f pos_ij = m_fPosition[i] - m_fPosition[j];
             m_fDensity[i] += m_m0 * m_kernel.W(pos_ij);
         }
 
-        for (int idx = 0; m_bNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_bNeighborsCount[i]; idx++)
         {
             const u32 j = m_bNeighbors[i][idx];
             const Vec2f pos_ij = m_fPosition[i] - m_bPosition[j];
@@ -524,7 +554,7 @@ namespace sph
         m_Fadv[i] += m_m0 * m_g;
 
         // add viscous force
-        for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_fNeighborsCount[i]; idx++)
         {
             const u32 j = m_fNeighbors[i][idx];
 
@@ -550,7 +580,7 @@ namespace sph
     {
         m_Dii[i] = { 0.f, 0.f };
 
-        for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_fNeighborsCount[i]; idx++)
         {
             const u32 j = m_fNeighbors[i][idx];
 
@@ -561,7 +591,7 @@ namespace sph
             }
         }
 
-        for (int idx = 0; m_bNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_bNeighborsCount[i]; idx++)
         {
             const u32 j = m_bNeighbors[i][idx];
 
@@ -579,7 +609,7 @@ namespace sph
     {
         m_Dadv[i] = 0.f;
 
-        for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_fNeighborsCount[i]; idx++)
         {
             const u32 j = m_fNeighbors[i][idx];
 
@@ -591,7 +621,7 @@ namespace sph
             }
         }
 
-        for (int idx = 0; m_bNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_bNeighborsCount[i]; idx++)
         {
             const u32 j = m_bNeighbors[i][idx];
 
@@ -615,7 +645,7 @@ namespace sph
     {
         m_Aii[i] = 0.f;
 
-        for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_fNeighborsCount[i]; idx++)
         {
             const u32 j = m_fNeighbors[i][idx];
 
@@ -627,7 +657,7 @@ namespace sph
             }
         }
 
-        for (int idx = 0; m_bNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_bNeighborsCount[i]; idx++)
         {
             const u32 j = m_bNeighbors[i][idx];
 
@@ -647,7 +677,7 @@ namespace sph
     {
         m_sumDijPj[i] = { 0.f, 0.f };
 
-        for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_fNeighborsCount[i]; idx++)
         {
             const u32 j = m_fNeighbors[i][idx];
 
@@ -667,7 +697,7 @@ namespace sph
     {
         m_Dcorr[i] = 0.f;
 
-        for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_fNeighborsCount[i]; idx++)
         {
             const u32 j = m_fNeighbors[i][idx];
 
@@ -685,7 +715,7 @@ namespace sph
             }
         }
 
-        for (int idx = 0; m_bNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_bNeighborsCount[i]; idx++)
         {
             const u32 j = m_bNeighbors[i][idx];
 
@@ -724,7 +754,7 @@ namespace sph
     {
         m_Fp[i] = { 0.f, 0.f };
 
-        for (int idx = 0; m_fNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_fNeighborsCount[i]; idx++)
         {
             const u32 j = m_fNeighbors[i][idx];
 
@@ -735,7 +765,7 @@ namespace sph
             }
         }
 
-        for (int idx = 0; m_bNeighbors[i][idx] != kInvalidIdx; idx++)
+        for (int idx = 0; idx < m_bNeighborsCount[i]; idx++)
         {
             const u32 j = m_bNeighbors[i][idx];
 

@@ -19,10 +19,12 @@ namespace sph
 
         Vec2i CellPosition(const Vec2f& _particle) const;
         int CellCount() const;
+
         float CellSize() const;
+        Vec2f GridSize() const;
+        Vec2i GridCells() const;
 
         void GatherNeighborCells(std::vector<u32>& _cellIndices, const Vec2f& _particle, float _radius) const;
-        Vec2f ClampPosition(const Vec2f& _particle) const;
 
     private:
         Vec2i m_gridCells;

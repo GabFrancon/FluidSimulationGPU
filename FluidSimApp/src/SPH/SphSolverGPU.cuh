@@ -4,6 +4,25 @@
 
 namespace sph
 {
+    // Simulation grid
+    struct GridGpu
+    {
+        int2 m_gridCells;
+        float2 m_gridSize;
+        float  m_cellSize;
+
+        __device__ void GatherNeighborCells(u32& _cellCount, u32 _cellIndices[kMaxNeighborCells], const float2& _particle, float _radius) const;
+        __device__ int2 CellPosition(const float2& _particle) const;
+
+        __device__ u32 CellIndex(const float2& _particle) const;
+        __device__ u32 CellIndex(int _i, int _j) const;
+
+        __device__ bool Contains(const float2& _particle) const;
+        __device__ bool Contains(int _cellIdx) const;
+
+        __host__ __device__ u32 CellCount() const;
+    };
+
     // Simulation smooth kernel
     struct KernelGpu
     {
@@ -21,6 +40,9 @@ namespace sph
     // Simulation scene
     struct SceneGpu
     {
+    // scene grid
+        GridGpu m_grid;
+
     // smooth kernel
         KernelGpu m_kernel;
 
@@ -57,15 +79,34 @@ namespace sph
         float2* m_Fadv = nullptr;        // non-pressure forces X component
         float2* m_Fp = nullptr;          // pressure forces X component
 
-    // neighboring structures
-        u32* m_fNeighborsFlat = nullptr; // list of fluid particles neighboring each fluid particle
-        u32* m_bNeighborsFlat = nullptr; // list of boundary particles neighboring each fluid particle
+    // fluid grid
+        u32* m_fluidPerCell = nullptr;      // list of fluid particles contained in each grid cell
+        int* m_nbFluidPerCell = nullptr;    // number of fluid particles contained in each grid cell
+
+    // boundary grid
+        u32* m_boundaryPerCell = nullptr;   // list of boundary particles contained in each grid cell
+        int* m_nbBoundaryPerCell = nullptr; // number of boundary particles contained in each grid cell
+
+    // fluid neighbors
+        u32* m_fNeighbors = nullptr;        // list of fluid particles neighboring each fluid particle
+        int* m_fNeighborsCount = nullptr;   // number of fluid particles neighboring each fluid particle
+
+    // boundary neighbors
+        u32* m_bNeighbors = nullptr;        // list of boundary particles neighboring each fluid particle
+        int* m_bNeighborsCount = nullptr;   // number of boundary particles neighboring each fluid particle
 
     // GPU dispatch
         u32 m_blockSize = 256;
-        u32 m_gridSize = 0;
+        u32 m_fGridSize = 0;
+        u32 m_bGridSize = 0;
+
+    // Entry Point
+        void Prepare();
+        void Simulate(float _dt);
 
     // main simulation steps
+        __host__ void BuildParticleGrid() const;
+        __host__ void SearchNeighbors() const;
         __host__ void PredictAdvection() const;
         __host__ void SolvePressure() const;
         __host__ void Integrate() const;
@@ -75,16 +116,23 @@ namespace sph
         __host__ void Deallocate();
 
     // memory transfer
-        __host__ void UploadNeighbors(const void* _fNeighbors, const void* _bNeighbors) const;
         __host__ void UploadBoundaryState(const void* _bPosition, const void* _Psi) const;
         __host__ void UploadFluidState(const void* _fPosition, const void* _fVelocity, const void* _fDensity) const;
-        __host__ void RetrieveFluidState(void* _fPosition, void* _fVelocity, void* _fDensity) const;
+        __host__ void FetchFluidState(void* _fPosition, void* _fVelocity, void* _fDensity) const;
 
-    // neighbors access
-        __device__ u32 GetFluidNeighbor(u32 _particleID, int _neighborIdx) const;
-        __device__ u32 GetBoundaryNeighbor(u32 _particleID, int _neighborIdx) const;
+    // particle grid
+        __device__ void AddToFluidGrid(u32 i) const;
+        __device__ void AddToBoundaryGrid(u32 i) const;
+        __device__ u32 GetFluidInCell(u32 _cellID, int _fluidIdx) const;
+        __device__ u32 GetBoundaryInCell(u32 _cellID, int _boundaryIdx) const;
+
+    // neighbors search
+        __device__ void SearchNeighbors(u32 i) const;
+        __device__ u32 GetFluidNeighbor(u32 _particleID, int _fNeighborIdx) const;
+        __device__ u32 GetBoundaryNeighbor(u32 _particleID, int _bNeighborIdx) const;
 
     // advection prediction
+        __device__ void PrecomputePsi(u32 i) const;
         __device__ void ComputeDensity(u32 i) const;
         __device__ void ComputeAdvectionForces(u32 i) const;
         __device__ void PredictVelocity(u32 i) const;

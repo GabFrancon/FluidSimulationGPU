@@ -20,6 +20,7 @@ namespace sph
     u32 SphGrid::CellIndex(int _i, int _j) const
     {
         return _i + _j * m_gridCells.x;
+        // return _i * m_gridCells.y + _j;
     }
 
     bool SphGrid::Contains(const Vec2f& _particle) const
@@ -51,6 +52,16 @@ namespace sph
         return m_cellSize;
     }
 
+    Vec2f SphGrid::GridSize() const
+    {
+        return m_gridSize;
+    }
+
+    Vec2i SphGrid::GridCells() const
+    {
+        return m_gridCells;
+    }
+
     void SphGrid::GatherNeighborCells(std::vector<u32>& _cellIndices, const Vec2f& _particle, float _radius) const
     {
         AVA_ASSERT(Contains(_particle), "Particle outisde the grid");
@@ -66,21 +77,17 @@ namespace sph
 
         int count = 0;
         const int nbNeighbors = (jMax - jMin + 1) * (iMax - iMin + 1);
+        AVA_ASSERT(nbNeighbors >= 0);
 
         _cellIndices.resize(nbNeighbors);
 
-        for (int j = jMin; j <= jMax; ++j)
+        for (int i = iMin; i <= iMax; ++i)
         {
-            for (int i = iMin; i <= iMax; ++i)
+            for (int j = jMin; j <= jMax; ++j)
             {
                 _cellIndices[count] = CellIndex(i, j);
                 count++;
             }
         }
-    }
-
-    Vec2f SphGrid::ClampPosition(const Vec2f& _particle) const
-    {
-        return Math::clamp(_particle, Vec2f(FLT_EPSILON), m_gridSize - m_cellSize - FLT_EPSILON);
     }
 }

@@ -11,6 +11,7 @@ namespace sph
     public:
         SphKernel(float _h = 1, u32 _dim = 2);
 
+        float GetRadius() const { return m_h; }
         float GetCoeff() const { return m_coeff[m_dim - 1]; }
         float GetDerivCoeff() const { return m_derivCoeff[m_dim - 1]; }
 

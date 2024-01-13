@@ -43,6 +43,7 @@ namespace sph
         float GetFluidDensity(u32 _particleID) const;
 
         float AverageFluidDensity() const;
+        float GetParticleSpacing() const;
 
     // boundary particles
         int GetBoundaryCount() const;
@@ -103,6 +104,7 @@ namespace sph
 
     // fluid particle states
         Vec2f* m_fPosition = nullptr;  // fluid particles positions
+        Vec2f* m_fPositionGpu = nullptr;
         Vec2f* m_fVelocity = nullptr;  // fluid particles velocities
         float* m_fPressure = nullptr;  // fluid particles pressure
         float* m_fDensity = nullptr;   // fluid particles density
@@ -120,17 +122,24 @@ namespace sph
         Vec2f* m_Fadv = nullptr;       // non-pressure forces
         Vec2f* m_Fp = nullptr;         // pressure forces
 
-    // neighboring structures
-        u32** m_fluidInGrid;           // list of fluid particles contained in each grid cell
-        u32* m_fluidInGridFlat;        // flat 1D array version of m_fluidInGrid
+    // fluid grid
+        u32** m_fluidPerCell;        // list of fluid particles contained in each grid cell
+        u32* m_fluidPerCellFlat;     // flat array version of m_fluidInGrid
+        int* m_nbFluidPerCell;       // number of fluid particles per grid cell
 
-        u32** m_fNeighbors;            // list of fluid particles neighboring each fluid particle
-        u32* m_fNeighborsFlat;         // flat array version of m_fNeighbors
+    // boundary grid
+        u32** m_boundaryPerCell;     // list of boundary particles contained in each grid cell
+        u32* m_boundaryPerCellFlat;  // flat array version of m_boundaryInGrid
+        int* m_nbBoundaryPerCell;    // number of boundary particles per grid cell
 
-        u32** m_boundaryInGrid;        // list of boundary particles contained in each grid cell
-        u32* m_boundaryInGridFlat;     // flat array version of m_boundaryInGrid
+    // fluid neighbors
+        u32** m_fNeighbors;          // list of fluid particles neighboring each fluid particle
+        u32* m_fNeighborsFlat;       // flat array version of m_fNeighbors
+        int* m_fNeighborsCount;      // number of fluid neighbors per particle
 
-        u32** m_bNeighbors;            // list of boundary particles neighboring each fluid particle
-        u32* m_bNeighborsFlat;         // flat array version of m_bNeighbors
+    // boundary neighbors
+        u32** m_bNeighbors;          // list of boundary particles neighboring each fluid particle
+        u32* m_bNeighborsFlat;       // flat array version of m_bNeighbors
+        int* m_bNeighborsCount;      // number of boundary neighbors per particle
     };
 }

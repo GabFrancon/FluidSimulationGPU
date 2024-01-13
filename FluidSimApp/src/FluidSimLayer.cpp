@@ -30,7 +30,16 @@ FluidSimLayer::FluidSimLayer()
         settings.dimensions = kBoundVolume;
         settings.restDensity = kRestDensity;
         settings.nbFluidParticles = static_cast<int>(kFluidVolume.x / kSpacing) * static_cast<int>(kFluidVolume.y / kSpacing);
-        settings.nbBoundaryParticles = 4 * static_cast<int>(kBoundVolume.x / kSpacing) + 4 * static_cast<int>((kBoundVolume.y - 4 * kSpacing) / kSpacing);
+
+        settings.nbBoundaryParticles = 0;
+        int removedCells = 0;
+
+        for (int i = 0; i < kBoundaryThickness; i++)
+        {
+            settings.nbBoundaryParticles += 4 * static_cast<int>((kBoundVolume.x - removedCells * kSpacing) / kSpacing);
+            removedCells += 4;
+            settings.nbBoundaryParticles += 4 * static_cast<int>((kBoundVolume.y - removedCells * kSpacing) / kSpacing);
+        }
 
         m_solver = new sph::SphSolver(settings);
         _ResetScene();
@@ -107,62 +116,77 @@ void FluidSimLayer::_ResetScene() const
 
     // Boundary particles
     {
+        float bottomX = 0.f;
+        float topX = kBoundVolume.x;
+    
+        float bottomY = 0.f;
+        float topY = kBoundVolume.y;
+
         int particleID = 0;
 
-        constexpr float bottomX = 0.f;
-        const float topX = kBoundVolume.x;
-
-        constexpr float bottomY = 0.f;
-        const float topY = kBoundVolume.y;
-
-        for (float x = bottomX; x < topX; x += offset100)
+        for (int i = 0; i < kBoundaryThickness; i++)
         {
-            // bottom boundary
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset25, bottomY + offset25));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset25, bottomY + offset75));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset75, bottomY + offset25));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset75, bottomY + offset75));
+            for (float x = bottomX; x < topX; x += offset100)
+            {
+                // bottom boundary
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset25, bottomY + offset25));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset25, bottomY + offset75));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset75, bottomY + offset25));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset75, bottomY + offset75));
+        
+                // top boundary
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset25, topY - offset25));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset25, topY - offset75));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset75, topY - offset25));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset75, topY - offset75));
+            }
+        
+            for (float y = bottomY + offset100; y < topY - offset100; y += offset100)
+            {
+                // left boundary
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(bottomX + offset25, y + offset25));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(bottomX + offset25, y + offset75));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(bottomX + offset75, y + offset25));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(bottomX + offset75, y + offset75));
+        
+                // right boundary
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(topX - offset25, y + offset25));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(topX - offset25, y + offset75));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(topX - offset75, y + offset25));
+                m_solver->SetBoundaryPosition(particleID++, Vec2f(topX - offset75, y + offset75));
+            }
 
-            // top boundary
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset25, topY - offset25));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset25, topY - offset75));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset75, topY - offset25));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(x + offset75, topY - offset75));
-        }
+            bottomX += offset100;
+            topX -= offset100;
 
-        for (float y = bottomY + offset100; y < topY - offset100; y += offset100)
-        {
-            // left boundary
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(bottomX + offset25, y + offset25));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(bottomX + offset25, y + offset75));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(bottomX + offset75, y + offset25));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(bottomX + offset75, y + offset75));
-
-            // right boundary
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(topX - offset25, y + offset25));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(topX - offset25, y + offset75));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(topX - offset75, y + offset25));
-            m_solver->SetBoundaryPosition(particleID++, Vec2f(topX - offset75, y + offset75));
+            bottomY += offset100;
+            topY -= offset100;
         }
     }
 
     // Fluid particles
     {
+        const float bottomX = kBoundaryThickness * offset100;
+        const float topX = kFluidVolume.x + kBoundaryThickness * offset100;
+    
+        const float bottomY = kBoundaryThickness * offset100;
+        const float topY = kFluidVolume.y + kBoundaryThickness * offset100;
+
         int particleID = 0;
 
-        for (float x = offset100; x < kFluidVolume.x + offset100; x += offset100)
+        for (float x = bottomX; x < topX; x += offset100)
         {
-            for (float y = offset100; y < kFluidVolume.y + offset100; y += offset100)
+            for (float y = bottomY; y < topY; y += offset100)
             {
                 m_solver->SetFluidVelocity(particleID, Vec2f(0.f, 0.f));
                 m_solver->SetFluidPosition(particleID++, Vec2f(x + offset25, y + offset25));
-
+    
                 m_solver->SetFluidVelocity(particleID, Vec2f(0.f, 0.f));
                 m_solver->SetFluidPosition(particleID++, Vec2f(x + offset25, y + offset75));
-
+    
                 m_solver->SetFluidVelocity(particleID, Vec2f(0.f, 0.f));
                 m_solver->SetFluidPosition(particleID++, Vec2f(x + offset75, y + offset25));
-
+    
                 m_solver->SetFluidVelocity(particleID, Vec2f(0.f, 0.f));
                 m_solver->SetFluidPosition(particleID++, Vec2f(x + offset75, y + offset75));
             }

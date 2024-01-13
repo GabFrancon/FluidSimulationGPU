@@ -31,7 +31,7 @@ Ava::Application* Ava::CreateApplication(const CmdLineParser& _args)
     graphicSettings.enableVSync = true;                 // v-sync on
     graphicSettings.contextCount = 2;                   // use double buffering
     graphicSettings.nbBindingSlotPerStage = 8;          // 8 resources available per shader stage
-    graphicSettings.maxDescriptorPerFrame = 200;        // up to 200 shader resources bound per frame (for each type)
+    graphicSettings.maxDescriptorPerFrame = 300;        // up to 200 shader resources bound per frame (for each type)
 
     ProfilerSettings profilerSettings{};
     profilerSettings.numFramesToRecord = 5;
