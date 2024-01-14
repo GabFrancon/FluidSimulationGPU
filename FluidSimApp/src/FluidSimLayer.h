@@ -27,9 +27,9 @@ private:
     // scene
     const float kSpacing = 0.125f;
     const float kRestDensity = 1e3f;
-    const int kBoundaryThickness = 2;
-    const Ava::Vec2f kFluidVolume = {  7.f, 10.f };
-    const Ava::Vec2f kBoundVolume = { 25.f, 20.f };
+    const int kBoundaryThickness = 5;
+    const Ava::Vec2f kFluidVolume = {  22.f, 30.f };
+    const Ava::Vec2f kBoundVolume = { 75.f, 60.f };
     const Ava::Color kClearColor = {  10 / 255.0f,  10 / 255.0f,  10 / 255.0f };
     const Ava::Color kFluidColor = {   0 / 255.0f,  37 / 255.0f, 147 / 255.0f };
     const Ava::Color kBoundColor = { 195 / 255.0f,  50 / 255.0f,  30 / 255.0f };
@@ -37,8 +37,8 @@ private:
     // simulation
     sph::SphSolver* m_solver = nullptr;
     bool m_simulationRunning = false;
-    bool m_enableGpuSimulation = true;
-    float m_simulationStepSize = 1.f / 180.f;
+    bool m_enableGpuSimulation = false;
+    float m_simulationStepSize = 1.f / 270.f;
     int m_simulationStepCount = 3; // 60 FPS
     Ava::ProfilerViewer* m_profiler = nullptr;
 

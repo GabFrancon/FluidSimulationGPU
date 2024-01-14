@@ -333,28 +333,22 @@ namespace sph
     {
         AUTO_CPU_MARKER("Retrieve Fluid State");
 
-        // Asynchronous fluid position memcpy from device to host
+        // Asynchronously memcpy fluid position from device to host
         CUDA_CHECK_ERROR(cudaMemcpyAsync(_fPosition, m_fPosition, sizeof(float2) * m_fluidCount, cudaMemcpyDeviceToHost));
-
-        // Record an event after the memcpy is complete
         CUDA_CHECK_ERROR(cudaEventRecord(s_fPositionTransferComplete));
 
-        // Asynchronous fluid velocity memcpy from device to host
-        // CUDA_CHECK_ERROR(cudaMemcpyAsync(_fVelocity, m_fVelocity, sizeof(float2) * m_fluidCount, cudaMemcpyDeviceToHost));
-
-        // Record an event after the memcpy is complete
-        // CUDA_CHECK_ERROR(cudaEventRecord(s_fVelocityTransferComplete));
+        // Asynchronously memcpy fluid velocity from device to host
+        CUDA_CHECK_ERROR(cudaMemcpyAsync(_fVelocity, m_fVelocity, sizeof(float2) * m_fluidCount, cudaMemcpyDeviceToHost));
+        CUDA_CHECK_ERROR(cudaEventRecord(s_fVelocityTransferComplete));
 
         // Asynchronous fluid density memcpy from device to host
-        // CUDA_CHECK_ERROR(cudaMemcpyAsync(_fDensity, m_fDensity, sizeof(float) * m_fluidCount, cudaMemcpyDeviceToHost));
-
-        // Record an event after the memcpy is complete
-        // CUDA_CHECK_ERROR(cudaEventRecord(s_fDensityTransferComplete));
+        CUDA_CHECK_ERROR(cudaMemcpyAsync(_fDensity, m_fDensity, sizeof(float) * m_fluidCount, cudaMemcpyDeviceToHost));
+        CUDA_CHECK_ERROR(cudaEventRecord(s_fDensityTransferComplete));
 
         // Synchronize with all memcpy events
         CUDA_CHECK_ERROR(cudaEventSynchronize(s_fPositionTransferComplete));
-        // CUDA_CHECK_ERROR(cudaEventSynchronize(s_fVelocityTransferComplete));
-        // CUDA_CHECK_ERROR(cudaEventSynchronize(s_fDensityTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventSynchronize(s_fVelocityTransferComplete));
+        CUDA_CHECK_ERROR(cudaEventSynchronize(s_fDensityTransferComplete));
     }
 
 

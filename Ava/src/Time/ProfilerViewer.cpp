@@ -143,7 +143,7 @@ namespace Ava {
             m_open = true;
             m_numFramesPerGroup = _nbFrames / kArraySize;
             m_lastUpdatedFrame = 0;
-            m_mode = AveragePerMarker;
+            m_mode = AveragePerFrame;
 
             for (auto& minVal : m_minDuration) minVal = FLT_MAX;
             memset(m_maxDuration, 0, sizeof(m_maxDuration));
