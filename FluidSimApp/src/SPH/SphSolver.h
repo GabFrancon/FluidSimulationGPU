@@ -104,7 +104,6 @@ namespace sph
 
     // fluid particle states
         Vec2f* m_fPosition = nullptr;  // fluid particles positions
-        Vec2f* m_fPositionGpu = nullptr;
         Vec2f* m_fVelocity = nullptr;  // fluid particles velocities
         float* m_fPressure = nullptr;  // fluid particles pressure
         float* m_fDensity = nullptr;   // fluid particles density

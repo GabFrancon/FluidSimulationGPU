@@ -104,25 +104,6 @@ namespace sph
             _SolvePressure();
             _Integrate();
         }
-
-        // static int iteration = 0;
-        // static float time = 0.f;
-        //
-        // iteration++;
-        // time += _dt;
-        //
-        // if (iteration % 100 == 0)
-        // {
-        //     float avgDistance = 0.f;
-        //     for (int i = 0; i < m_fluidCount; i++)
-        //     {
-        //         avgDistance += Math::distance(m_fPositionGpu[i], m_fPosition[i]);
-        //     }
-        //
-        //     avgDistance *= m_h;
-        //     avgDistance /= m_fluidCount;
-        //     AVA_TRACE("Iteration %d, time %.3f -> avgDistance = %.3f", iteration, time, avgDistance);
-        // }
     }
 
 
@@ -214,9 +195,6 @@ namespace sph
         m_fPosition = newArr1<Vec2f>(m_fluidCount);
         memset(m_fPosition, 0, sizeof(Vec2f) * m_fluidCount);
 
-        m_fPositionGpu = newArr1<Vec2f>(m_fluidCount);
-        memset(m_fPositionGpu, 0, sizeof(Vec2f) * m_fluidCount);
-
         m_fVelocity = newArr1<Vec2f>(m_fluidCount);
         memset(m_fVelocity, 0, sizeof(Vec2f) * m_fluidCount);
 
@@ -293,7 +271,6 @@ namespace sph
     void SphSolver::_Deallocate()
     {
         delArray1(m_fPosition);
-        delArray1(m_fPositionGpu);
         delArray1(m_fVelocity);
         delArray1(m_fPressure);
         delArray1(m_fDensity);
